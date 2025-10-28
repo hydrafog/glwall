@@ -1,0 +1,33 @@
+# Build artifacts
+src/*.o
+src/glwall
+src/wlr-layer-shell-unstable-v1-client-protocol.h
+src/wlr-layer-shell-unstable-v1-client-protocol.c
+src/wlr-layer-shell-unstable-v1-protocol.c
+src/xdg-shell-protocol.h
+src/xdg-shell-protocol.c
+
+# Nix
+result
+result-*
+.direnv/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+all_code.txt
