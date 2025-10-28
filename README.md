@@ -17,10 +17,10 @@ GLWall renders GLSL fragment shaders as live wallpapers on Wayland desktops. Nat
 
 ```bash
 # Run directly
-nix run github:hyperfog/glwall -- -s shaders/template.glsl
+nix run github:hydrafog/glwall -- -s shaders/template.glsl
 
 # Install
-nix profile install github:hyperfog/glwall
+nix profile install github:hydrafog/glwall
 ```
 
 ### Build from Source
@@ -70,7 +70,7 @@ See `shaders/template.glsl` for a complete example.
 
 ```nix
 {
-  inputs.glwall.url = "github:yourusername/glwall";
+  inputs.glwall.url = "github:hydrafog/glwall";
   
   outputs = { glwall, ... }: {
     nixosConfigurations.hostname = {
