@@ -58,7 +58,17 @@ static void run_main_loop(struct glwall_state *state) {
  */
 int main(int argc, char *argv[]) {
     struct glwall_state state = {0};
+
+    // Default configuration
     state.running = true;
+    state.power_mode = GLWALL_POWER_MODE_FULL;
+    state.mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_NONE;
+    state.mouse_overlay_edge_height = 32; // 32px edge strip by default when enabled
+    state.audio_enabled = false;
+    state.audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
+    state.allow_vertex_shaders = false;
+    state.vertex_shader_path = NULL;
+    state.vertex_count = 262144; // 512x512 points by default for vertex shaders
 
     parse_options(argc, argv, &state);
 

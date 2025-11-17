@@ -14,14 +14,23 @@
 // Output
 out vec4 FragColor;
 
-// Uniforms
+// Uniforms (ShaderToy-like)
 uniform vec3 iResolution;     // Viewport resolution (width, height, aspect)
 uniform float iTime;          // Time in seconds since start
-uniform float iTimeDelta;     // Time since last frame (currently unused)
-uniform float iBatteryLevel;  // Battery level 0.0-1.0 (currently unused)
-uniform float iLocalTime;     // Local time 0.0-1.0 (currently unused)
-uniform vec4 iMouse;          // Mouse position (currently unused)
-uniform sampler2D myTexture;  // Texture input (currently unused)
+uniform float iTimeDelta;     // Time since last frame
+uniform int   iFrame;         // Frame counter
+uniform float iBatteryLevel;  // Battery level 0.0-1.0 (reserved)
+uniform float iLocalTime;     // Local time 0.0-1.0 (reserved)
+uniform vec4 iMouse;          // Mouse: (x, y, clickX, clickY) in pixels for this output
+uniform sampler2D sound;      // Audio texture (mono strip): sample with soundRes
+uniform vec2 soundRes;        // Resolution of `sound` texture (width, height)
+uniform sampler2D myTexture;  // Example texture input (user-managed)
+
+// Convenience aliases for porting shaders from other sites.
+// Remove duplicate uniform declarations in your shader and use these names instead.
+#define resolution iResolution.xy
+#define time       iTime
+#define mouse      iMouse.xy
 
 // Main Image Function
 //

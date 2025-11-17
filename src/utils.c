@@ -62,7 +62,8 @@ char *read_file(const char *path) {
 /**
  * @brief Parses command-line options
  * 
- * Processes -s/--shader and -d/--debug options. Exits with error message
+ * Processes -s/--shader, -d/--debug and extended options for power mode,
+ * mouse overlay, audio, and vertex shaders. Exits with error message
  * if required shader path is not provided.
  * 
  * @param argc Argument count from main()
@@ -73,10 +74,19 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
     struct option long_options[] = {
         {"shader", required_argument, 0, 's'},
         {"debug", no_argument, 0, 'd'},
+        {"power-mode", required_argument, 0, 'p'},
+        {"mouse-overlay", required_argument, 0, 'm'},
+        {"mouse-overlay-height", required_argument, 0, 5},
+        {"audio", no_argument, 0, 1},
+        {"no-audio", no_argument, 0, 2},
+        {"audio-source", required_argument, 0, 3},
+        {"vertex-shader", required_argument, 0, 'v'},
+        {"allow-vertex-shaders", no_argument, 0, 'V'},
+        {"vertex-count", required_argument, 0, 4},
         {0, 0, 0, 0}
     };
     int c;
-    while ((c = getopt_long(argc, argv, "s:d", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:dp:m:v:V", long_options, NULL)) != -1) {
         switch (c) {
             case 's':
                 state->shader_path = optarg;
@@ -84,8 +94,77 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
             case 'd':
                 state->debug = true;
                 break;
+            case 'p':
+                if (strcmp(optarg, "full") == 0) {
+                    state->power_mode = GLWALL_POWER_MODE_FULL;
+                } else if (strcmp(optarg, "throttled") == 0) {
+                    state->power_mode = GLWALL_POWER_MODE_THROTTLED;
+                } else if (strcmp(optarg, "paused") == 0) {
+                    state->power_mode = GLWALL_POWER_MODE_PAUSED;
+                } else {
+                    LOG_ERROR("Invalid power mode '%s'. Expected full|throttled|paused.", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 'm':
+                if (strcmp(optarg, "none") == 0) {
+                    state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_NONE;
+                } else if (strcmp(optarg, "edge") == 0) {
+                    state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_EDGE;
+                } else if (strcmp(optarg, "full") == 0) {
+                    state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_FULL;
+                } else {
+                    LOG_ERROR("Invalid mouse overlay mode '%s'. Expected none|edge|full.", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 5: // --mouse-overlay-height
+            {
+                long h = strtol(optarg, NULL, 10);
+                if (h <= 0) {
+                    LOG_ERROR("mouse-overlay-height must be positive, got %ld", h);
+                    exit(EXIT_FAILURE);
+                }
+                state->mouse_overlay_edge_height = (int)h;
+                break;
+            }
+            case 1: // --audio
+                state->audio_enabled = true;
+                break;
+            case 2: // --no-audio
+                state->audio_enabled = false;
+                break;
+            case 3: // --audio-source
+                if (strcmp(optarg, "pulse") == 0 || strcmp(optarg, "pulseaudio") == 0) {
+                    state->audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
+                } else if (strcmp(optarg, "none") == 0) {
+                    state->audio_source = GLWALL_AUDIO_SOURCE_NONE;
+                } else {
+                    LOG_ERROR("Invalid audio source '%s'. Expected pulse|pulseaudio|none.", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 'v':
+                state->vertex_shader_path = optarg;
+                state->allow_vertex_shaders = true;
+                break;
+            case 'V':
+                state->allow_vertex_shaders = true;
+                break;
+            case 4: // --vertex-count
+            {
+                long v = strtol(optarg, NULL, 10);
+                if (v <= 0) {
+                    LOG_ERROR("vertex-count must be positive, got %ld", v);
+                    exit(EXIT_FAILURE);
+                }
+                state->vertex_count = (int)v;
+                break;
+            }
             default:
-                fprintf(stderr, "Usage: %s -s <shader.frag> [--debug]\n", argv[0]);
+                fprintf(stderr,
+                        "Usage: %s -s <shader.frag> [--debug] \\\n [--power-mode full|throttled|paused] \\\n [--mouse-overlay none|edge|full] \\\n [--audio|--no-audio] [--audio-source pulse|none] \\\n [--vertex-shader path --allow-vertex-shaders]\n",
+                        argv[0]);
                 exit(EXIT_FAILURE);
         }
     }

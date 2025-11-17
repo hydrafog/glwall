@@ -51,8 +51,17 @@ GLSL 330 fragment shaders with ShaderToy-compatible uniforms:
 ```glsl
 #version 330 core
 out vec4 FragColor;
-uniform vec3 iResolution;  // Viewport resolution
-uniform float iTime;       // Time in seconds
+
+// Core uniforms supplied by GLWall
+uniform vec3  iResolution;  // (width, height, aspect)
+uniform float iTime;        // Time in seconds since start
+uniform float iTimeDelta;   // Time since last frame
+uniform int   iFrame;       // Frame counter
+uniform vec4  iMouse;       // Mouse (x, y, clickX, clickY) in pixels for this output
+
+// Audio texture (when enabled)
+uniform sampler2D sound;    // Mono audio data as 1D strip
+uniform vec2    soundRes;   // (width, height) of the sound texture
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
@@ -64,7 +73,9 @@ void main() {
 }
 ```
 
-See `shaders/template.glsl` for a complete example.
+`iMouse` is only updated when the compositor delivers pointer events to the wallpaper
+surface (typically when no other window is covering it). See `shaders/template.glsl`
+for a complete example and porting helpers.
 
 ## NixOS Module
 

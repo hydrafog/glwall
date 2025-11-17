@@ -31,6 +31,7 @@
             wayland-protocols
             wlr-protocols
             egl-wayland
+            pulseaudio
           ];
 
           # Set protocol directories for Makefile
@@ -40,7 +41,7 @@
           buildPhase = ''
             cd src
             make clean
-            make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm"
+            make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse"
           '';
 
           installPhase = ''
@@ -112,20 +113,84 @@
               default = glwallPkg;
               description = "GLWall package to use";
             };
+
+            powerMode = lib.mkOption {
+              type = lib.types.enum [ "full" "throttled" "paused" ];
+              default = "full";
+              description = "Rendering power policy: full, throttled, or paused when occluded.";
+            };
+
+            mouseOverlay = lib.mkOption {
+              type = lib.types.enum [ "none" "edge" "full" ];
+              default = "none";
+              description = "Experimental mouse overlay mode (none, edge, full).";
+            };
+
+            audio = {
+              enable = lib.mkOption {
+                type = lib.types.bool;
+                default = true;
+                description = "Enable audio-reactive shaders (sampler2D sound).";
+              };
+
+              source = lib.mkOption {
+                type = lib.types.enum [ "pulseaudio" "none" ];
+                default = "pulseaudio";
+                description = "Audio backend to use for sound capture.";
+              };
+            };
+
+            shaders = {
+              allowVertex = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Allow custom vertex shaders for advanced effects.";
+              };
+            };
+
+            vertexCount = lib.mkOption {
+              type = lib.types.int;
+              default = 262144; # 512x512 points
+              description = "Number of vertices to draw when using a custom vertex shader.";
+            };
+
+            mouseOverlayHeight = lib.mkOption {
+              type = lib.types.int;
+              default = 32;
+              description = "Height in pixels of the mouse overlay edge strip when mouseOverlay = 'edge'.";
+            };
           };
 
           config = lib.mkIf cfg.enable {
+            assertions = [
+              {
+                assertion = lib.hasPrefix "${glwallPkg}/share/glwall/shaders" cfg.shaderPath;
+                message = "glwall.shaderPath must point inside ${glwallPkg}/share/glwall/shaders.";
+              }
+            ];
+
             environment.systemPackages = [ cfg.package ];
             
-            # Optional: Add systemd user service for auto-start
-            # systemd.user.services.glwall = {
-            #   description = "GLWall shader wallpaper";
-            #   wantedBy = [ "graphical-session.target" ];
-            #   serviceConfig = {
-            #     ExecStart = "${cfg.package}/bin/glwall -s ${cfg.shaderPath}";
-            #     Restart = "on-failure";
-            #   };
-            # };
+            systemd.user.services.glwall = {
+              description = "GLWall shader wallpaper";
+              wantedBy = [ "graphical-session.target" ];
+              after = [ "graphical-session.target" ];
+              serviceConfig = let
+                powerArg = "--power-mode ${cfg.powerMode}";
+                mouseArgs = "--mouse-overlay ${cfg.mouseOverlay} --mouse-overlay-height ${toString cfg.mouseOverlayHeight}";
+                audioArgs = if cfg.audio.enable then
+                  "--audio --audio-source ${cfg.audio.source}"
+                else
+                  "--no-audio --audio-source none";
+                vertexArgs = lib.concatStringsSep " " (
+                  (lib.optional cfg.shaders.allowVertex "--allow-vertex-shaders") ++
+                  ["--vertex-count ${toString cfg.vertexCount}"]
+                );
+              in {
+                ExecStart = "${cfg.package}/bin/glwall -s ${cfg.shaderPath} ${powerArg} ${mouseArgs} ${audioArgs} ${vertexArgs}";
+                Restart = "on-failure";
+              };
+            };
           };
         };
     };

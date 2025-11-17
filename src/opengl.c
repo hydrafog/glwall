@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include "opengl.h"
 #include "utils.h"
+#include "audio.h"
 
 // Shader Source Code
 
@@ -134,13 +135,40 @@ bool init_opengl(struct glwall_state *state) {
     char *frag_src = read_file(state->shader_path);
     if (!frag_src) return false;
 
-    state->shader_program = create_shader_program(state, vertex_shader_src, frag_src);
+    char *vert_src = NULL;
+    if (state->allow_vertex_shaders && state->vertex_shader_path) {
+        vert_src = read_file(state->vertex_shader_path);
+        if (!vert_src) {
+            LOG_ERROR("Failed to read vertex shader '%s'", state->vertex_shader_path);
+            free(frag_src);
+            return false;
+        }
+    }
+
+    const char *vs = vert_src ? vert_src : vertex_shader_src;
+    state->shader_program = create_shader_program(state, vs, frag_src);
     free(frag_src);
+    if (vert_src) free(vert_src);
 
     if (!state->shader_program) return false;
 
+    // Cache uniform locations. Missing uniforms will return -1, which is safe
+    // to pass to glUniform* (no-op), so shaders can omit unused ones.
     state->loc_resolution = glGetUniformLocation(state->shader_program, "iResolution");
     state->loc_time = glGetUniformLocation(state->shader_program, "iTime");
+    state->loc_time_delta = glGetUniformLocation(state->shader_program, "iTimeDelta");
+    state->loc_frame = glGetUniformLocation(state->shader_program, "iFrame");
+    state->loc_mouse = glGetUniformLocation(state->shader_program, "iMouse");
+    state->loc_sound = glGetUniformLocation(state->shader_program, "sound");
+    state->loc_sound_res = glGetUniformLocation(state->shader_program, "soundRes");
+    state->loc_vertex_count = glGetUniformLocation(state->shader_program, "vertexCount");
+
+    // Initialize audio backend if enabled. This assumes an active GL context.
+    if (!init_audio(state)) {
+        LOG_ERROR("Audio initialization failed, disabling audio.");
+        state->audio_enabled = false;
+    }
+
     LOG_DEBUG(state, "OpenGL initialized successfully.");
     return true;
 }
@@ -148,12 +176,16 @@ bool init_opengl(struct glwall_state *state) {
 /**
  * @brief Cleans up OpenGL resources
  * 
- * Deletes the shader program and VAO.
+ * Deletes the shader program, VAO, and audio resources.
  * 
  * @param state Pointer to global application state
  */
 void cleanup_opengl(struct glwall_state *state) {
     LOG_DEBUG(state, "Cleaning up OpenGL...");
+
+    // Clean up audio texture and backend before destroying GL context.
+    cleanup_audio(state);
+
     if (state->shader_program) {
         glDeleteProgram(state->shader_program);
     }
@@ -192,18 +224,113 @@ void render_frame(struct glwall_output *output) {
     float time_sec = (current_time.tv_sec - state->start_time.tv_sec) +
                      (current_time.tv_nsec - state->start_time.tv_nsec) / 1e9f;
 
+    // Decide whether to advance shader time based on power mode.
+    float dt_real;
+    if (state->frame_index == 0) {
+        dt_real = 0.0f;
+        state->last_time_sec = time_sec;
+    } else {
+        dt_real = time_sec - state->last_time_sec;
+    }
+
+    float min_dt = 0.0f;
+    switch (state->power_mode) {
+        case GLWALL_POWER_MODE_FULL:
+            min_dt = 0.0f;          // Always update
+            break;
+        case GLWALL_POWER_MODE_THROTTLED:
+            min_dt = 1.0f / 30.0f;  // ~30 Hz logical updates
+            break;
+        case GLWALL_POWER_MODE_PAUSED:
+            min_dt = 1.0f;          // ~1 Hz logical updates
+            break;
+        default:
+            min_dt = 0.0f;
+            break;
+    }
+
+    bool do_update = (state->frame_index == 0) || (dt_real >= min_dt);
+    float time_delta = 0.0f;
+    if (do_update) {
+        state->logical_time_sec += dt_real;
+        time_delta = dt_real;
+        state->last_time_sec = time_sec;
+        state->frame_index++;
+    }
+
+    float shader_time = state->logical_time_sec;
+    int current_frame = state->frame_index;
+
+    // Update audio texture (if enabled) before drawing. We only need to
+    // update when advancing logical time; reusing the previous texture
+    // reduces CPU usage when throttled.
+    if (do_update) {
+        update_audio_texture(state);
+    }
+
     glUseProgram(state->shader_program);
 
     // Update shader uniforms.
-    // Use glUniform3f for the 'vec3 iResolution' uniform.
-    glUniform1f(state->loc_time, time_sec);
-    glUniform3f(state->loc_resolution, (float)output->width, (float)output->height, 1.0f);
-    LOG_DEBUG(state, "Uniforms: iTime=%.2f, iResolution=%dx%dx1.0", time_sec, output->width, output->height);
+    // iTime / iTimeDelta / iFrame
+    if (state->loc_time != -1) {
+        glUniform1f(state->loc_time, shader_time);
+    }
+    if (state->loc_time_delta != -1) {
+        glUniform1f(state->loc_time_delta, time_delta);
+    }
+    if (state->loc_frame != -1) {
+        glUniform1i(state->loc_frame, current_frame);
+    }
+
+    // iResolution
+    if (state->loc_resolution != -1) {
+        glUniform3f(state->loc_resolution, (float)output->width, (float)output->height, 1.0f);
+    }
+
+    // iMouse: (x, y, clickX, clickY) in pixel coordinates, or zeros if pointer is not over this output.
+    if (state->loc_mouse != -1) {
+        float mx = 0.0f, my = 0.0f, mz = 0.0f, mw = 0.0f;
+        if (state->pointer_output == output) {
+            mx = (float)state->pointer_x;
+            my = (float)(output->height - 1) - (float)state->pointer_y; // flip Y to match GL coords
+            if (state->pointer_down) {
+                mz = (float)state->pointer_down_x;
+                mw = (float)(output->height - 1) - (float)state->pointer_down_y;
+            }
+        }
+        glUniform4f(state->loc_mouse, mx, my, mz, mw);
+    }
+
+    // Audio uniforms
+    if (state->audio_enabled && state->audio.backend_ready) {
+        if (state->loc_sound != -1 && state->audio.texture != 0) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, state->audio.texture);
+            glUniform1i(state->loc_sound, 0);
+        }
+        if (state->loc_sound_res != -1) {
+            glUniform2f(state->loc_sound_res,
+                        (float)state->audio.tex_width,
+                        (float)state->audio.tex_height);
+        }
+    }
+
+    // vertexCount uniform for custom vertex shaders
+    if (state->loc_vertex_count != -1 && state->allow_vertex_shaders) {
+        glUniform1f(state->loc_vertex_count, (float)state->vertex_count);
+    }
+
+    LOG_DEBUG(state, "Uniforms: iTime=%.2f, iTimeDelta=%.4f, iFrame=%d, iResolution=%dx%dx1.0", shader_time, time_delta, current_frame, output->width, output->height);
 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // The vertex shader uses gl_VertexID to generate a fullscreen quad.
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    // Draw geometry: fullscreen quad by default, or point cloud for custom vertex shaders.
+    if (state->allow_vertex_shaders && state->vertex_shader_path) {
+        glDrawArrays(GL_POINTS, 0, state->vertex_count);
+    } else {
+        // The built-in vertex shader uses gl_VertexID to generate a fullscreen quad.
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
 
     GLenum err;
     if ((err = glGetError()) != GL_NO_ERROR) {
