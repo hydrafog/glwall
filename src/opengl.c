@@ -324,9 +324,9 @@ void render_frame(struct glwall_output *output) {
 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Draw geometry: fullscreen quad by default, or point cloud for custom vertex shaders.
+    // Draw geometry: fullscreen quad by default, or custom primitives for vertex shaders.
     if (state->allow_vertex_shaders && state->vertex_shader_path) {
-        glDrawArrays(GL_POINTS, 0, state->vertex_count);
+        glDrawArrays(state->vertex_draw_mode, 0, state->vertex_count);
     } else {
         // The built-in vertex shader uses gl_VertexID to generate a fullscreen quad.
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

@@ -119,9 +119,11 @@ struct glwall_state {
     int mouse_overlay_edge_height;              // Height (in px) of edge input strip when using EDGE mode
     bool audio_enabled;                         // Config: enable audio reactive shaders
     enum glwall_audio_source audio_source;      // Selected audio backend
+    const char *audio_device_name;              // PulseAudio device name (NULL = default)
     bool allow_vertex_shaders;                  // Allow custom vertex shaders
     const char *vertex_shader_path;             // Optional path to vertex shader
     int vertex_count;                           // Number of vertices when using custom vertex shader
+    GLenum vertex_draw_mode;                    // GL_POINTS or GL_LINES for custom vertex shaders
 
     // Wayland State
     struct wl_display *display;

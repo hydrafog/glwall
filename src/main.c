@@ -35,7 +35,6 @@ static void run_main_loop(struct glwall_state *state);
  * @param state Pointer to global application state
  */
 static void run_main_loop(struct glwall_state *state) {
-    clock_gettime(CLOCK_MONOTONIC, &state->start_time);
     LOG_INFO("Starting render loop...");
 
     // The main loop simply dispatches Wayland events. Rendering is driven
@@ -66,9 +65,11 @@ int main(int argc, char *argv[]) {
     state.mouse_overlay_edge_height = 32; // 32px edge strip by default when enabled
     state.audio_enabled = false;
     state.audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
+    state.audio_device_name = NULL;
     state.allow_vertex_shaders = false;
     state.vertex_shader_path = NULL;
     state.vertex_count = 262144; // 512x512 points by default for vertex shaders
+    state.vertex_draw_mode = GL_POINTS; // Default to points
 
     parse_options(argc, argv, &state);
 
@@ -79,6 +80,9 @@ int main(int argc, char *argv[]) {
     if (!init_egl(&state)) goto cleanup;
     if (!init_opengl(&state)) goto cleanup;
 
+    // Initialize start time BEFORE rendering begins
+    clock_gettime(CLOCK_MONOTONIC, &state.start_time);
+    
     start_rendering(&state);
     run_main_loop(&state);
 
