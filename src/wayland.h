@@ -6,8 +6,7 @@
  * layer surface creation, and event handling.
  */
 
-#ifndef WAYLAND_H
-#define WAYLAND_H
+#pragma once
 
 #include "state.h"
 

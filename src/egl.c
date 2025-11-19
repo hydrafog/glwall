@@ -13,13 +13,18 @@
 
 /**
  * @brief Initializes EGL display and creates contexts
- * 
+ *
  * Gets the EGL display, initializes it, binds the OpenGL API, chooses
- * a configuration, creates an OpenGL 3.3 core profile context, and
- * creates window surfaces for all outputs.
- * 
+ * a configuration supporting 8-bit RGBA with OpenGL rendering, creates
+ * an OpenGL 3.3 core profile context, and creates EGL window surfaces
+ * for all outputs.
+ *
  * @param state Pointer to global application state
  * @return true on success, false on failure
+ *
+ * @pre state->display must be initialized (Wayland connection)
+ * @pre state->outputs must contain at least one output with a valid wl_egl_window
+ * @post state->egl_display, state->egl_context, and output->egl_surface initialized
  */
 bool init_egl(struct glwall_state *state) {
     state->egl_display = eglGetDisplay(state->display);
@@ -95,10 +100,14 @@ bool init_egl(struct glwall_state *state) {
 
 /**
  * @brief Cleans up EGL resources
- * 
- * Destroys all EGL surfaces, contexts, and terminates the EGL display.
- * 
+ *
+ * Unmakes the current EGL context, destroys all EGL window surfaces,
+ * destroys the EGL context, and terminates the EGL display. This must
+ * be called during application shutdown.
+ *
  * @param state Pointer to global application state
+ *
+ * @note Safe to call even if init_egl() failed or was never called.
  */
 void cleanup_egl(struct glwall_state *state) {
     if (state->egl_display == EGL_NO_DISPLAY) return;

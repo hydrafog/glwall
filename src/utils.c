@@ -80,9 +80,12 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
         {"audio", no_argument, 0, 1},
         {"no-audio", no_argument, 0, 2},
         {"audio-source", required_argument, 0, 3},
+        {"audio-device", required_argument, 0, 6},
         {"vertex-shader", required_argument, 0, 'v'},
         {"allow-vertex-shaders", no_argument, 0, 'V'},
         {"vertex-count", required_argument, 0, 4},
+        {"vertex-mode", required_argument, 0, 7},
+        {"kernel-input", no_argument, 0, 8},
         {0, 0, 0, 0}
     };
     int c;
@@ -125,7 +128,7 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
                     LOG_ERROR("mouse-overlay-height must be positive, got %ld", h);
                     exit(EXIT_FAILURE);
                 }
-                state->mouse_overlay_edge_height = (int)h;
+                state->mouse_overlay_edge_height = (int32_t)h;
                 break;
             }
             case 1: // --audio
@@ -144,6 +147,9 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
                     exit(EXIT_FAILURE);
                 }
                 break;
+            case 6: // --audio-device
+                state->audio_device_name = optarg;
+                break;
             case 'v':
                 state->vertex_shader_path = optarg;
                 state->allow_vertex_shaders = true;
@@ -158,12 +164,25 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
                     LOG_ERROR("vertex-count must be positive, got %ld", v);
                     exit(EXIT_FAILURE);
                 }
-                state->vertex_count = (int)v;
+                state->vertex_count = (int32_t)v;
                 break;
             }
+            case 7: // --vertex-mode
+                if (strcmp(optarg, "points") == 0) {
+                    state->vertex_draw_mode = GL_POINTS;
+                } else if (strcmp(optarg, "lines") == 0) {
+                    state->vertex_draw_mode = GL_LINES;
+                } else {
+                    LOG_ERROR("Invalid vertex mode '%s'. Expected points|lines.", optarg);
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 8: // --kernel-input
+                state->kernel_input_enabled = true;
+                break;
             default:
                 fprintf(stderr,
-                        "Usage: %s -s <shader.frag> [--debug] \\\n [--power-mode full|throttled|paused] \\\n [--mouse-overlay none|edge|full] \\\n [--audio|--no-audio] [--audio-source pulse|none] \\\n [--vertex-shader path --allow-vertex-shaders]\n",
+                        "Usage: %s -s <shader.frag> [--debug] \\\n [--power-mode full|throttled|paused] \\\n [--mouse-overlay none|edge|full] \\\n [--audio|--no-audio] [--audio-source pulse|none] \\\n [--audio-device device-name] \\\n [--vertex-shader path --allow-vertex-shaders] \\\n [--vertex-mode points|lines] \\\n [--kernel-input]\n",
                         argv[0]);
                 exit(EXIT_FAILURE);
         }

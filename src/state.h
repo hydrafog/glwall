@@ -11,8 +11,7 @@
  * included before any other GL/EGL headers to function correctly.
  */
 
-#ifndef STATE_H
-#define STATE_H
+#pragma once
 
 #include <stdbool.h>
 #include <time.h>
@@ -70,8 +69,8 @@ struct glwall_audio_state {
     bool enabled;           // Audio reactive shaders enabled at runtime
     bool backend_ready;     // Backend (e.g. PulseAudio) initialized
     GLuint texture;         // OpenGL texture containing audio data
-    int tex_width;          // Width of audio texture in pixels
-    int tex_height;         // Height of audio texture in pixels
+    int32_t tex_width;          // Width of audio texture in pixels
+    int32_t tex_height;         // Height of audio texture in pixels
     void *impl;             // Opaque backend implementation (owned by audio.c)
 };
 
@@ -116,14 +115,15 @@ struct glwall_state {
 
     enum glwall_power_mode power_mode;          // Power policy for rendering
     enum glwall_mouse_overlay_mode mouse_overlay_mode; // Experimental mouse overlay
-    int mouse_overlay_edge_height;              // Height (in px) of edge input strip when using EDGE mode
+    int32_t mouse_overlay_edge_height;              // Height (in px) of edge input strip when using EDGE mode
     bool audio_enabled;                         // Config: enable audio reactive shaders
     enum glwall_audio_source audio_source;      // Selected audio backend
     const char *audio_device_name;              // PulseAudio device name (NULL = default)
     bool allow_vertex_shaders;                  // Allow custom vertex shaders
     const char *vertex_shader_path;             // Optional path to vertex shader
-    int vertex_count;                           // Number of vertices when using custom vertex shader
+    int32_t vertex_count;                           // Number of vertices when using custom vertex shader
     GLenum vertex_draw_mode;                    // GL_POINTS or GL_LINES for custom vertex shaders
+    bool kernel_input_enabled;                  // Use kernel /dev/input devices (bypasses Wayland)
 
     // Wayland State
     struct wl_display *display;
@@ -163,6 +163,9 @@ struct glwall_state {
 
     // Audio State
     struct glwall_audio_state audio;
+
+    // Kernel Input State
+    void *input_impl;                          // Opaque kernel input implementation (owned by input.c)
 
     // Runtime State
     bool running;

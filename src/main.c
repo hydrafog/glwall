@@ -18,6 +18,7 @@
 #include "wayland.h"
 #include "egl.h"
 #include "opengl.h"
+#include "input.h"
 
 // Private Function Declarations
 
@@ -70,6 +71,8 @@ int main(int argc, char *argv[]) {
     state.vertex_shader_path = NULL;
     state.vertex_count = 262144; // 512x512 points by default for vertex shaders
     state.vertex_draw_mode = GL_POINTS; // Default to points
+    state.kernel_input_enabled = false;
+    state.input_impl = NULL;
 
     parse_options(argc, argv, &state);
 
@@ -80,6 +83,11 @@ int main(int argc, char *argv[]) {
     if (!init_egl(&state)) goto cleanup;
     if (!init_opengl(&state)) goto cleanup;
 
+    // Initialize kernel input if requested (optional, will log warnings on failure)
+    if (state.kernel_input_enabled) {
+        init_input(&state);
+    }
+
     // Initialize start time BEFORE rendering begins
     clock_gettime(CLOCK_MONOTONIC, &state.start_time);
     
@@ -88,6 +96,7 @@ int main(int argc, char *argv[]) {
 
 cleanup:
     LOG_INFO("Cleaning up and exiting...");
+    cleanup_input(&state);
     cleanup_opengl(&state);
     cleanup_egl(&state);
     cleanup_wayland(&state);

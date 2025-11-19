@@ -14,6 +14,7 @@
 #include "opengl.h"
 #include "utils.h"
 #include "audio.h"
+#include "input.h"
 
 // Shader Source Code
 
@@ -33,13 +34,16 @@ static GLuint create_shader_program(struct glwall_state *state, const char *vert
 
 /**
  * @brief Compiles a shader from source
- * 
- * Creates a shader object, compiles the source, and checks for errors.
- * 
+ *
+ * Creates a shader object, compiles the source code, and checks for
+ * compilation errors. On failure, logs the error and returns 0.
+ *
  * @param state Pointer to global application state (for debug logging)
  * @param type Shader type (GL_VERTEX_SHADER or GL_FRAGMENT_SHADER)
  * @param source Shader source code string
  * @return Compiled shader ID, or 0 on failure
+ *
+ * @post On failure, the shader object is deleted and not returned
  */
 static GLuint compile_shader(struct glwall_state *state, GLenum type, const char *source) {
     LOG_DEBUG(state, "Compiling shader of type %u", type);
@@ -62,14 +66,17 @@ static GLuint compile_shader(struct glwall_state *state, GLenum type, const char
 
 /**
  * @brief Creates and links a shader program
- * 
- * Compiles vertex and fragment shaders, links them into a program,
- * and checks for linking errors.
- * 
+ *
+ * Compiles vertex and fragment shaders and links them into a program.
+ * Checks for compilation and linking errors. On any failure, logs the
+ * error, cleans up allocated shaders, and returns 0.
+ *
  * @param state Pointer to global application state (for debug logging)
  * @param vert_src Vertex shader source code
  * @param frag_src Fragment shader source code
  * @return Linked program ID, or 0 on failure
+ *
+ * @post Compiled shader objects are always deleted (whether linking succeeds or fails)
  */
 static GLuint create_shader_program(struct glwall_state *state, const char *vert_src, const char *frag_src) {
     LOG_DEBUG(state, "Creating shader program...");
@@ -105,12 +112,19 @@ static GLuint create_shader_program(struct glwall_state *state, const char *vert
 
 /**
  * @brief Initializes OpenGL context and compiles shaders
- * 
- * Initializes GLEW, creates a VAO, loads the fragment shader from disk,
- * compiles and links the shader program, and retrieves uniform locations.
- * 
+ *
+ * Initializes GLEW, creates a VAO, loads shader source from disk,
+ * compiles and links the shader program, caches uniform locations,
+ * and initializes the audio backend if enabled.
+ *
  * @param state Pointer to global application state
  * @return true on success, false on failure
+ *
+ * @pre An EGL context must be current
+ * @pre state->outputs must contain at least one output with egl_surface
+ * @pre state->shader_path must point to a valid fragment shader file
+ * @post state->shader_program, state->vao, and all uniform locations are initialized
+ * @post Audio backend is initialized (if state->audio_enabled)
  */
 bool init_opengl(struct glwall_state *state) {
     LOG_DEBUG(state, "Initializing OpenGL...");
@@ -175,9 +189,10 @@ bool init_opengl(struct glwall_state *state) {
 
 /**
  * @brief Cleans up OpenGL resources
- * 
- * Deletes the shader program, VAO, and audio resources.
- * 
+ *
+ * Deletes the shader program, VAO, and audio resources. This must be
+ * called during application shutdown before the EGL context is destroyed.
+ *
  * @param state Pointer to global application state
  */
 void cleanup_opengl(struct glwall_state *state) {
@@ -196,12 +211,17 @@ void cleanup_opengl(struct glwall_state *state) {
 
 /**
  * @brief Renders a single frame for the given output
- * 
+ *
  * Makes the output's EGL surface current, calculates elapsed time,
- * updates shader uniforms, renders a fullscreen quad, swaps buffers,
- * and requests the next frame callback.
- * 
+ * updates all shader uniforms (iTime, iResolution, iMouse, audio, etc.),
+ * renders the scene, swaps buffers, and requests the next frame callback
+ * to continue the animation loop.
+ *
  * @param output Pointer to the output to render
+ *
+ * @pre output->configured must be true
+ * @pre OpenGL must be initialized
+ * @pre The output's EGL surface must be valid
  */
 void render_frame(struct glwall_output *output) {
     struct glwall_state *state = output->state;
@@ -211,6 +231,12 @@ void render_frame(struct glwall_output *output) {
     }
 
     LOG_DEBUG(state, "Rendering for output %u (%ux%u)", output->output_name, output->width, output->height);
+    
+    // Poll kernel input events if enabled (updates pointer_x/y)
+    if (state->kernel_input_enabled) {
+        poll_input_events(state);
+    }
+    
     eglMakeCurrent(state->egl_display, output->egl_surface, output->egl_surface, state->egl_context);
     
     // The VAO must be bound every time the context is made current.

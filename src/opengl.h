@@ -6,8 +6,7 @@
  * and per-frame rendering for each output.
  */
 
-#ifndef OPENGL_H
-#define OPENGL_H
+#pragma once
 
 #include "state.h"
 

@@ -6,8 +6,7 @@
  * and logging macros for error, info, and debug messages.
  */
 
-#ifndef UTILS_H
-#define UTILS_H
+#pragma once
 
 #include "state.h"
 

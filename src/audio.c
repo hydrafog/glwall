@@ -24,10 +24,24 @@
 #define GLWALL_AUDIO_TEX_WIDTH 512
 #define GLWALL_AUDIO_TEX_HEIGHT 1
 
+/**
+ * @brief Backend-specific audio implementation state
+ *
+ * Opaque structure storing PulseAudio connection and stream details.
+ */
 struct glwall_audio_impl {
-    pa_simple *pa; // PulseAudio simple recording stream
+    pa_simple *pa; /**< PulseAudio simple recording stream */
 };
 
+/**
+ * @brief Resets audio state and cleans up backend
+ *
+ * Disables audio, deletes the audio texture, and frees all backend
+ * resources. Sets state->audio.impl to NULL. This is used both during
+ * initialization (on error) and cleanup.
+ *
+ * @param state Pointer to global application state
+ */
 static void glwall_audio_reset(struct glwall_state *state) {
     state->audio.enabled = false;
     state->audio.backend_ready = false;
@@ -49,6 +63,21 @@ static void glwall_audio_reset(struct glwall_state *state) {
     }
 }
 
+/**
+ * @brief Initialize audio backend and create audio texture
+ *
+ * Sets up the PulseAudio recording stream and creates an OpenGL texture
+ * to store audio sample data. If audio is disabled or no backend is
+ * selected, this function succeeds silently so the application can
+ * continue without audio support.
+ *
+ * @param state Pointer to global application state
+ * @return true on success or silent success (audio disabled), false on error
+ *
+ * @note The EGL context must be current before calling this function.
+ * @note Audio texture dimensions are defined by GLWALL_AUDIO_TEX_WIDTH
+ *       and GLWALL_AUDIO_TEX_HEIGHT macros.
+ */
 bool init_audio(struct glwall_state *state) {
     // Respect configuration: if audio is disabled or no backend selected,
     // silently succeed so the rest of the app can run.
@@ -76,16 +105,31 @@ bool init_audio(struct glwall_state *state) {
     ss.rate = 44100;
     ss.channels = 1; // mono for visualization simplicity
 
+    // Low-latency buffer configuration
+    pa_buffer_attr bufattr;
+    bufattr.maxlength = (uint32_t) -1;
+    bufattr.tlength = (uint32_t) -1;
+    bufattr.prebuf = (uint32_t) -1;
+    bufattr.minreq = (uint32_t) -1;
+    // Fragment size: 512 samples = ~11ms at 44100 Hz (minimize latency)
+    bufattr.fragsize = GLWALL_AUDIO_TEX_WIDTH * sizeof(int16_t);
+
     int error = 0;
+    const char *device = state->audio_device_name;
+    if (device) {
+        LOG_INFO("Using audio device: %s", device);
+    } else {
+        LOG_INFO("Using default audio source");
+    }
     pa_simple *pa = pa_simple_new(
         NULL,               // Use default server
         "glwall",          // Application name
         PA_STREAM_RECORD,   // Record stream
-        NULL,               // Default source
+        device,             // Audio source device (NULL = default)
         "glwall-audio",    // Stream description
         &ss,
         NULL,               // Default channel map
-        NULL,               // Default buffering attributes
+        &bufattr,           // Low-latency buffering
         &error
     );
 
@@ -139,6 +183,20 @@ bool init_audio(struct glwall_state *state) {
 #endif
 }
 
+/**
+ * @brief Update audio texture with latest samples
+ *
+ * Reads the latest audio samples from PulseAudio, normalizes them to
+ * [-1, 1] range, and uploads them to the audio texture. Called once per
+ * frame from the render loop. This function is a no-op if audio is
+ * disabled or the backend is not ready.
+ *
+ * @param state Pointer to global application state
+ *
+ * @note The EGL context must be current before calling this function.
+ * @note On read error from PulseAudio, the backend_ready flag is set
+ *       to false to prevent repeated errors.
+ */
 void update_audio_texture(struct glwall_state *state) {
     if (!state->audio.enabled || !state->audio.backend_ready) return;
     if (!state->audio.impl) return;
@@ -163,9 +221,18 @@ void update_audio_texture(struct glwall_state *state) {
 
     // Convert samples to normalized floats in [-1, 1].
     float data[GLWALL_AUDIO_TEX_WIDTH];
+    float max_sample = 0.0f;
     for (int i = 0; i < width; ++i) {
         data[i] = samples[i] / 32768.0f;
+        float abs_val = data[i] < 0 ? -data[i] : data[i];
+        if (abs_val > max_sample) max_sample = abs_val;
     }
+
+    // Optionally log audio levels for debugging
+    // static int frame_count = 0;
+    // if (++frame_count % 120 == 0) {
+    //     LOG_DEBUG(state, "Audio: max=%.4f", max_sample);
+    // }
 
     glBindTexture(GL_TEXTURE_2D, state->audio.texture);
     glTexSubImage2D(
@@ -181,6 +248,15 @@ void update_audio_texture(struct glwall_state *state) {
     );
 }
 
+/**
+ * @brief Clean up audio backend and texture
+ *
+ * Frees all backend resources (PulseAudio connections, etc.) and deletes
+ * the audio texture. Sets the audio state to disabled. This is typically
+ * called during application shutdown.
+ *
+ * @param state Pointer to global application state
+ */
 void cleanup_audio(struct glwall_state *state) {
     glwall_audio_reset(state);
 }

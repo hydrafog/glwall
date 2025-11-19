@@ -3,7 +3,7 @@
 # Compiler and flags
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -g
-LDFLAGS = -lwayland-client -lwayland-egl -lEGL -lGL -lGLEW -lm -lpulse-simple -lpulse
+LDFLAGS = -lwayland-client -lwayland-egl -lEGL -lGL -lGLEW -lm -lpulse-simple -lpulse -levdev
 
 # --- Protocol Configuration ---
 # Check for environment variables from shell.nix
@@ -32,7 +32,7 @@ GENERATED_HEADERS = $(LAYER_SHELL_CLIENT_HEADER) $(XDG_SHELL_CLIENT_HEADER)
 GENERATED_SOURCES = $(LAYER_SHELL_CODE) $(XDG_SHELL_CODE)
 
 # --- Source and Object Files ---
-SRCS = main.c utils.c wayland.c egl.c opengl.c audio.c $(GENERATED_SOURCES)
+SRCS = main.c utils.c wayland.c egl.c opengl.c audio.c input.c $(GENERATED_SOURCES)
 OBJS = $(SRCS:.c=.o)
 
 # Target executable

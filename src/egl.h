@@ -6,8 +6,7 @@
  * and window surface setup for each output.
  */
 
-#ifndef EGL_H
-#define EGL_H
+#pragma once
 
 #include "state.h"
 

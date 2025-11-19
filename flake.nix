@@ -32,6 +32,7 @@
             wlr-protocols
             egl-wayland
             pulseaudio
+            libevdev
           ];
 
           # Set protocol directories for Makefile
@@ -41,7 +42,7 @@
           buildPhase = ''
             cd src
             make clean
-            make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse"
+            make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
           '';
 
           installPhase = ''

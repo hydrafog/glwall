@@ -7,8 +7,7 @@
  * 2D texture bound to the "sound" sampler2D uniform.
  */
 
-#ifndef AUDIO_H
-#define AUDIO_H
+#pragma once
 
 #include "state.h"
 

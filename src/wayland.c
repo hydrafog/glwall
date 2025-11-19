@@ -49,13 +49,14 @@ static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer,
 
 /**
  * @brief Frame callback handler
- * 
+ *
  * Called when the compositor signals that it's time to draw the next frame.
- * Destroys the callback and triggers rendering for the output.
- * 
+ * This initiates the rendering cycle for the output and schedules the next
+ * frame callback to continue the animation loop.
+ *
  * @param data Pointer to glwall_output structure
  * @param cb Callback object to destroy
- * @param time Compositor timestamp (unused)
+ * @param time Compositor timestamp (unused in this implementation)
  */
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time) {
     UNUSED(time);
@@ -71,17 +72,17 @@ const struct wl_callback_listener frame_listener = {
 
 /**
  * @brief Layer surface configure event handler
- * 
+ *
  * Called when the compositor configures the layer surface dimensions.
- * For the main background surface, updates output size and EGL window.
- * For optional overlay surfaces, configures the input region used for
- * mouse overlay modes.
- * 
+ * For the main background surface, updates output size, resizes the EGL
+ * window, and triggers a re-render if OpenGL is ready. For optional
+ * overlay surfaces, configures the input region based on mouse overlay mode.
+ *
  * @param data Pointer to glwall_output structure
  * @param surface Layer surface being configured
  * @param serial Serial number for acknowledgment
- * @param w New width
- * @param h New height
+ * @param w New width in pixels
+ * @param h New height in pixels
  */
 static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface, uint32_t serial, uint32_t w, uint32_t h) {
     struct glwall_output *output = data;
@@ -145,10 +146,11 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
 
 /**
  * @brief Layer surface closed event handler
- * 
- * Called when the compositor closes the layer surface. Sets the running
- * flag to false to trigger application shutdown.
- * 
+ *
+ * Called when the compositor closes the layer surface (e.g., due to
+ * compositor shutdown or error). Sets the running flag to false to
+ * trigger graceful application shutdown.
+ *
  * @param data Pointer to glwall_output structure
  * @param surface Layer surface being closed
  */
@@ -185,15 +187,16 @@ static const struct wl_pointer_listener pointer_listener = {
 
 /**
  * @brief Registry global event handler
- * 
+ *
  * Called for each global object advertised by the compositor. Binds to
- * compositor, layer-shell, and output interfaces.
- * 
+ * compositor, layer-shell, seat, and output interfaces. For outputs,
+ * creates a new glwall_output structure to track them.
+ *
  * @param data Pointer to glwall_state structure
  * @param registry Wayland registry
- * @param name Global object name
- * @param interface Interface name string
- * @param version Interface version
+ * @param name Global object name/identifier
+ * @param interface Interface name string (e.g., "wl_compositor")
+ * @param version Protocol version advertised by the compositor
  */
 static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
     UNUSED(version);
@@ -238,12 +241,15 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
 
 /**
  * @brief Registry global remove event handler
- * 
- * Called when a global object is removed. Currently not handled.
- * 
+ *
+ * Called when a global object is removed (e.g., when a monitor is
+ * disconnected). Currently not handled to keep the implementation simple.
+ *
  * @param data Pointer to glwall_state structure (unused)
  * @param registry Wayland registry (unused)
- * @param name Global object name (unused)
+ * @param name Global object name/identifier (unused)
+ *
+ * @note Runtime output removal is not currently supported.
  */
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {
     // Runtime output removal is not handled for simplicity.
@@ -398,12 +404,16 @@ static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer,
 
 /**
  * @brief Initializes Wayland connection and discovers outputs
- * 
+ *
  * Connects to the Wayland display, retrieves the registry, adds a listener
- * to discover globals, and performs a roundtrip to process events.
- * 
+ * to discover globals (compositor, layer-shell, outputs, seat), and performs
+ * a roundtrip to process all discovery events.
+ *
  * @param state Pointer to global application state
- * @return true on success, false on failure
+ * @return true on success, false on failure (logs errors)
+ *
+ * @post state->display, state->registry, state->compositor, state->layer_shell initialized
+ * @post state->outputs contains linked list of discovered outputs
  */
 bool init_wayland(struct glwall_state *state) {
     state->display = wl_display_connect(NULL);
@@ -425,13 +435,16 @@ bool init_wayland(struct glwall_state *state) {
 
 /**
  * @brief Creates layer surfaces for all outputs
- * 
- * For each discovered output, creates a Wayland surface, layer surface,
- * and EGL window. Configures the layer surface as a fullscreen background.
- * Optionally creates an input-only overlay surface used for mouse overlay
- * modes (edge/full).
- * 
+ *
+ * For each discovered output, creates a Wayland surface and layer surface,
+ * configures them as a fullscreen background layer, and creates the EGL
+ * window. Optionally creates an input-only overlay surface for mouse
+ * overlay modes (edge/full).
+ *
  * @param state Pointer to global application state
+ *
+ * @pre init_wayland() must have been called successfully
+ * @post Layer surfaces are created and configured for all outputs
  */
 void create_layer_surfaces(struct glwall_state *state) {
     if (!state->outputs) {
@@ -495,11 +508,15 @@ void create_layer_surfaces(struct glwall_state *state) {
 
 /**
  * @brief Starts the rendering loop for all configured outputs
- * 
+ *
  * Triggers the initial render_frame() call for each configured output,
- * which begins the frame callback loop.
- * 
+ * which begins the frame callback loop. This is called after OpenGL is
+ * initialized to start the animation.
+ *
  * @param state Pointer to global application state
+ *
+ * @pre create_layer_surfaces() must have been called successfully
+ * @pre OpenGL must be initialized
  */
 void start_rendering(struct glwall_state *state) {
     LOG_INFO("Kicking off rendering...");
