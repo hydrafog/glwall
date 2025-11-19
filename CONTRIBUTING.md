@@ -27,7 +27,12 @@ Thank you for your interest in contributing to GLWall! We welcome contributions 
 3.  **Test your changes**:
     *   Build: `cd src && make`
     *   Run: `./glwall -s ../shaders/template.glsl --debug`
-4.  **Commit your changes** with clear, descriptive messages.
+4.  **Commit your changes** using [Conventional Commits](https://www.conventionalcommits.org/):
+    *   `feat: add new shader`
+    *   `fix: resolve memory leak`
+    *   `docs: update readme`
+    *   `style: fix indentation`
+    *   `refactor: simplify render loop`
 5.  **Push to your fork** and submit a **Pull Request**.
 
 ## 3. Code Style
