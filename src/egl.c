@@ -60,6 +60,7 @@ bool init_egl(struct glwall_state *state) {
         LOG_ERROR("Failed to choose EGL config.");
         return false;
     }
+    LOG_DEBUG(state, "Chosen EGL config index 0 from %d candidates", num_config);
 
     // Request a 3.3 core profile context to match the shaders.
     EGLint const context_attribs[] = {
@@ -74,6 +75,7 @@ bool init_egl(struct glwall_state *state) {
         LOG_ERROR("Failed to create EGL context.");
         return false;
     }
+    LOG_DEBUG(state, "Created EGL context with OpenGL 3.3 Core Profile");
 
     // Create EGL surfaces for each output.
     // The wl_egl_window for each output was already created in

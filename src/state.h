@@ -174,5 +174,3 @@ struct glwall_state {
     float logical_time_sec;                // Accumulated shader time for iTime
     int frame_index;                       // Frame counter (for iFrame)
 };
-
-#endif // STATE_H

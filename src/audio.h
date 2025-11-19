@@ -41,5 +41,3 @@ void update_audio_texture(struct glwall_state *state);
  * @param state Global application state
  */
 void cleanup_audio(struct glwall_state *state);
-
-#endif // AUDIO_H

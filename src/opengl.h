@@ -46,5 +46,3 @@ void cleanup_opengl(struct glwall_state *state);
  * @pre OpenGL context must be initialized
  */
 void render_frame(struct glwall_output *output);
-
-#endif // OPENGL_H

@@ -46,5 +46,3 @@ void poll_input_events(struct glwall_state *state);
  * @param state Pointer to global application state
  */
 void cleanup_input(struct glwall_state *state);
-
-#endif // INPUT_H

@@ -34,5 +34,3 @@ bool init_egl(struct glwall_state *state);
  * @param state Pointer to global application state
  */
 void cleanup_egl(struct glwall_state *state);
-
-#endif // EGL_H

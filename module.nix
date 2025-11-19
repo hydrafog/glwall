@@ -108,6 +108,12 @@ in
       default = null;
     };
 
+    glwall.debug = lib.mkOption {
+      type = lib.types.bool;
+      description = "Enable debug logging.";
+      default = false;
+    };
+
     glwall.package = lib.mkOption {
       type = lib.types.package;
       readOnly = true;
@@ -121,5 +127,16 @@ in
   # Install GLWall package to system environment when enabled.
   config = lib.mkIf config.glwall.enable {
     environment.systemPackages = [ config.glwall.package ];
+
+    systemd.user.services.glwall = {
+      description = "GLWall - Shader Wallpaper Daemon";
+      wantedBy = [ "graphical-session.target" ];
+      partOf = [ "graphical-session.target" ];
+      serviceConfig = {
+        ExecStart = "${config.glwall.package}/bin/glwall -s ${config.glwall.shaderPath} ${lib.optionalString config.glwall.debug "--debug"} ${lib.optionalString (config.glwall.texturePath != null) "-i ${config.glwall.texturePath}"}";
+        Restart = "always";
+        RestartSec = "5s";
+      };
+    };
   };
 }

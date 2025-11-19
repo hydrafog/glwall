@@ -42,7 +42,16 @@
           buildPhase = ''
             cd src
             make clean
-            make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
+            make \
+              EXTRA_CFLAGS="-I${pkgs.libevdev}/include/libevdev-1.0" \
+              LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
+          '';
+
+          # Minimal smoke test: ensure the built binary exists.
+          # (Extend this later to run a real test suite once available.)
+          checkPhase = ''
+            cd src
+            test -x ./glwall
           '';
 
           installPhase = ''

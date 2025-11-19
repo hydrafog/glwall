@@ -113,6 +113,7 @@ bool init_audio(struct glwall_state *state) {
     bufattr.minreq = (uint32_t) -1;
     // Fragment size: 512 samples = ~11ms at 44100 Hz (minimize latency)
     bufattr.fragsize = GLWALL_AUDIO_TEX_WIDTH * sizeof(int16_t);
+    LOG_DEBUG(state, "Audio buffer fragsize: %u bytes", bufattr.fragsize);
 
     int error = 0;
     const char *device = state->audio_device_name;
@@ -179,6 +180,7 @@ bool init_audio(struct glwall_state *state) {
     state->audio.backend_ready = true;
 
     LOG_INFO("Audio texture created: %dx%d", state->audio.tex_width, state->audio.tex_height);
+    LOG_DEBUG(state, "Audio backend initialized successfully");
     return true;
 #endif
 }

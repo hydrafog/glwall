@@ -227,6 +227,7 @@ void poll_input_events(struct glwall_state *state) {
                     if (state->pointer_x >= input->screen_width) {
                         state->pointer_x = input->screen_width - 1;
                     }
+                    // LOG_DEBUG(state, "Input REL_X: %d -> %.1f", ev.value, state->pointer_x);
                 } else if (ev.code == REL_Y) {
                     state->pointer_y += ev.value;
                     if (state->pointer_y < 0) state->pointer_y = 0;
@@ -262,6 +263,7 @@ void poll_input_events(struct glwall_state *state) {
                         state->pointer_down_x = state->pointer_x;
                         state->pointer_down_y = state->pointer_y;
                     }
+                    LOG_DEBUG(state, "Input BTN_LEFT: %d at (%.1f, %.1f)", ev.value, state->pointer_x, state->pointer_y);
                 }
             }
         }

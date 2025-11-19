@@ -2,7 +2,8 @@
 
 # Compiler and flags
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -g
+# Allow callers (e.g. Nix) to inject additional include paths and flags via EXTRA_CFLAGS
+CFLAGS = -std=c11 -Wall -Wextra -g $(EXTRA_CFLAGS)
 LDFLAGS = -lwayland-client -lwayland-egl -lEGL -lGL -lGLEW -lm -lpulse-simple -lpulse -levdev
 
 # --- Protocol Configuration ---
@@ -14,8 +15,10 @@ ifeq ($(WLR_PROTOCOLS_DIR),)
   $(error "WLR_PROTOCOLS_DIR is not set. Please run from a nix-shell.")
 endif
 
-# Use vpath to tell 'make' where to find protocol files.
-vpath %.xml $(WAYLAND_PROTOCOLS_DIR)/stable/xdg-shell $(WLR_PROTOCOLS_DIR)/unstable/wlr-layer-shell
+# Use vpath to tell 'make' where to find protocol XML files.
+# - xdg-shell.xml is provided by wayland-protocols under stable/xdg-shell
+# - wlr-layer-shell-unstable-v1.xml is provided by wlr-protocols directly under unstable/
+vpath %.xml $(WAYLAND_PROTOCOLS_DIR)/stable/xdg-shell $(WLR_PROTOCOLS_DIR)/unstable
 
 # --- Protocol File Definitions ---
 LAYER_SHELL_PROTOCOL = wlr-layer-shell-unstable-v1

@@ -59,5 +59,3 @@ void create_layer_surfaces(struct glwall_state *state);
  * @pre Outputs must be configured
  */
 void start_rendering(struct glwall_state *state);
-
-#endif // WAYLAND_H

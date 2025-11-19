@@ -13,7 +13,8 @@
 // Logging Macros
 
 #define LOG_ERROR(fmt, ...) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__)
-#define LOG_INFO(fmt, ...) fprintf(stdout, "[INFO] " fmt "\n", ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  fprintf(stderr, "[WARN ] " fmt "\n", ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...)  fprintf(stdout, "[INFO ] " fmt "\n", ##__VA_ARGS__)
 #define LOG_DEBUG(state, fmt, ...) do { if ((state)->debug) fprintf(stdout, "[DEBUG] " fmt "\n", ##__VA_ARGS__); } while (0)
 
 // Function Declarations
@@ -44,5 +45,3 @@ char *read_file(const char *path);
  * @post state->shader_path and state->debug are set based on arguments
  */
 void parse_options(int argc, char *argv[], struct glwall_state *state);
-
-#endif // UTILS_H
