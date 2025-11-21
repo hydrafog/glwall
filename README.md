@@ -33,11 +33,6 @@ GLWall is a high-performance wallpaper renderer for Wayland compositors that ren
 ## Community & Governance
 *   **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development workflow, standards, and contribution guidelines.
 
-## AI & Agent Context
-*   **[Coding Style](.ai/CODING_STYLE.md)** - C and Nix coding standards.
-*   **[Context](.ai/CONTEXT.md)** - High-level project context.
-*   **[Glossary](.ai/GLOSSARY.md)** - Domain-specific terminology.
-
 ## Quick References
 
 *   **Entry Point:** `src/main.c`

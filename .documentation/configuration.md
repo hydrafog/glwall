@@ -19,7 +19,7 @@ Usage: `glwall -s <shader.frag> [options]`
 | `-p, --power-mode` | Enum | No | `full` | `full`, `throttled`, or `paused`. |
 | `-m, --mouse-overlay` | Enum | No | `none` | `none`, `edge`, or `full`. |
 | `--audio` | Flag | No | `false` | Enable audio reactivity. |
-| `--audio-source` | Enum | No | `pulse` | `pulse`, `pulseaudio`, or `none`. |
+| `--audio-source` | Enum | No | `pulse` | `pulse`, `pulseaudio`, `fake`, `debug`, or `none`. Use `fake`/`debug` for synthetic audio (testing). |
 | `--vertex-count` | Int | No | `262144` | Number of vertices to draw. |
 
 ## 2. NixOS Module Options

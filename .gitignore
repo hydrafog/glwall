@@ -1,33 +1,21 @@
-# Build artifacts
-src/*.o
-src/glwall
-src/wlr-layer-shell-unstable-v1-client-protocol.h
-src/wlr-layer-shell-unstable-v1-client-protocol.c
-src/wlr-layer-shell-unstable-v1-protocol.c
-src/xdg-shell-protocol.h
-src/xdg-shell-protocol.c
-
 # Nix
 result
 result-*
 .direnv/
+secrets.sh
 
 # Editor files
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+# Project metadata
+.ai/
 
-# Temporary files
-*.tmp
-*.bak
-*.log
-all_code.txt
+# Python
+.venv/
+__pycache__/
+
+# C build artifacts
+src/glwall
+src/*.o
+src/*-protocol.c
+src/*-protocol.h

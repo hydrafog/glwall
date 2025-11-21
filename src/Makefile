@@ -3,8 +3,9 @@
 # Compiler and flags
 CC = gcc
 # Allow callers (e.g. Nix) to inject additional include paths and flags via EXTRA_CFLAGS
-CFLAGS = -std=c11 -Wall -Wextra -g $(EXTRA_CFLAGS)
-LDFLAGS = -lwayland-client -lwayland-egl -lEGL -lGL -lGLEW -lm -lpulse-simple -lpulse -levdev
+PKGS = wayland-client wayland-egl egl gl glew libpulse-simple libpulse libevdev
+CFLAGS = -std=c11 -Wall -Wextra -g $(shell pkg-config --cflags $(PKGS)) $(EXTRA_CFLAGS)
+LDFLAGS = $(shell pkg-config --libs $(PKGS)) -lm
 
 # --- Protocol Configuration ---
 # Check for environment variables from shell.nix

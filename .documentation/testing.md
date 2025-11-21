@@ -25,6 +25,25 @@ To verify changes, run the application in debug mode with a known shader:
 5.  **Input**: Does mouse interaction work (if enabled)?
 6.  **Exit**: Does it shut down cleanly on Ctrl+C?
 
+### 1.2. Testing Audio-Reactive Shaders
+
+For testing audio-reactive shaders without real audio hardware or when you want predictable, reproducible audio data, use the fake audio source:
+
+```bash
+./glwall -s ../shaders/audio-circles.glsl --audio --audio-source fake --debug
+```
+
+The fake audio source generates synthetic audio with:
+- Multiple frequency components (bass, mid, high)
+- Amplitude modulation for dynamic spectrum
+- Predictable, repeating patterns
+
+This is useful for:
+- Verifying audio texture uploads work correctly
+- Testing shader audio reactivity without microphone/playback
+- Creating reproducible test scenarios
+- Debugging audio visualization issues
+
 ## 2. Future Automated Tests
 
 We plan to implement:

@@ -25,16 +25,20 @@ let
     pname = "glwall";
     version = "1.0.0";
 
-    src = ./.;
+    src = ../.;
 
     # Build Dependencies
     
     # OpenGL and Wayland development libraries required for compilation.
+    nativeBuildInputs = with pkgs; [
+      pkg-config
+      wayland-scanner
+    ];
+    
     buildInputs = with pkgs; [
       # Build toolchain
       gcc
       gnumake
-      pkg-config
 
       # OpenGL and graphics libraries
       glew
@@ -42,10 +46,15 @@ let
 
       # Wayland compositor integration
       wayland
-      wayland-scanner
       wayland-protocols
       wlr-protocols
       egl-wayland
+      
+      # Audio support
+      pulseaudio
+      
+      # Input device support
+      libevdev
     ];
 
     # Build Environment
@@ -62,7 +71,9 @@ let
     buildPhase = ''
       cd src
       make clean
-      make LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm"
+      make \
+        EXTRA_CFLAGS="-I${pkgs.libevdev}/include/libevdev-1.0" \
+        LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
     '';
 
     # Install Phase

@@ -1,7 +1,7 @@
 /**
  * @file main.c
  * @brief Main entry point for GLWall
- * 
+ *
  * This file contains the main() function and event loop for GLWall.
  * It initializes all subsystems (Wayland, EGL, OpenGL), starts the
  * rendering loop, and handles cleanup on exit.
@@ -13,12 +13,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "egl.h"
+#include "input.h"
+#include "opengl.h"
 #include "state.h"
 #include "utils.h"
 #include "wayland.h"
-#include "egl.h"
-#include "opengl.h"
-#include "input.h"
 
 // Private Function Declarations
 
@@ -28,11 +28,11 @@ static void run_main_loop(struct glwall_state *state);
 
 /**
  * @brief Main event loop
- * 
+ *
  * Records the start time and enters the Wayland event dispatch loop.
  * Rendering is driven by frame callbacks, so this loop simply waits
  * for and dispatches Wayland events.
- * 
+ *
  * @param state Pointer to global application state
  */
 static void run_main_loop(struct glwall_state *state) {
@@ -48,10 +48,10 @@ static void run_main_loop(struct glwall_state *state) {
 
 /**
  * @brief Main entry point
- * 
+ *
  * Parses command-line options, initializes all subsystems, starts rendering,
  * runs the event loop, and cleans up on exit.
- * 
+ *
  * @param argc Argument count
  * @param argv Argument vector
  * @return EXIT_SUCCESS on normal exit
@@ -69,19 +69,23 @@ int main(int argc, char *argv[]) {
     state.audio_device_name = NULL;
     state.allow_vertex_shaders = false;
     state.vertex_shader_path = NULL;
-    state.vertex_count = 262144; // 512x512 points by default for vertex shaders
+    state.vertex_count = 262144;        // 512x512 points by default for vertex shaders
     state.vertex_draw_mode = GL_POINTS; // Default to points
     state.kernel_input_enabled = false;
     state.input_impl = NULL;
 
     parse_options(argc, argv, &state);
 
-    if (!init_wayland(&state)) goto cleanup;
+    if (!init_wayland(&state))
+        goto cleanup;
     create_layer_surfaces(&state);
-    if (!state.running) goto cleanup;
+    if (!state.running)
+        goto cleanup;
 
-    if (!init_egl(&state)) goto cleanup;
-    if (!init_opengl(&state)) goto cleanup;
+    if (!init_egl(&state))
+        goto cleanup;
+    if (!init_opengl(&state))
+        goto cleanup;
 
     // Initialize kernel input if requested (optional, will log warnings on failure)
     if (state.kernel_input_enabled) {
@@ -90,7 +94,7 @@ int main(int argc, char *argv[]) {
 
     // Initialize start time BEFORE rendering begins
     clock_gettime(CLOCK_MONOTONIC, &state.start_time);
-    
+
     start_rendering(&state);
     run_main_loop(&state);
 

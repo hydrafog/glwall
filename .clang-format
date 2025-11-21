@@ -1,0 +1,54 @@
+---
+# Language Configuration
+Language: Cpp
+Standard: Cpp11
+
+# Base Style
+# We start with LLVM as a base and override to match K&R requirements
+BasedOnStyle: LLVM
+
+# 2.1 Formatting: K&R Style
+# Open braces on the same line (e.g., "if (x) {")
+BreakBeforeBraces: Attach
+
+
+# 2.1 Formatting: Indentation
+# 4 spaces, no tabs
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+# Indentation for line continuations (multi-line conditions/params)
+ContinuationIndentWidth: 4
+
+# 2.1 Line Length
+# Hard limit set to 100. Developers should aim for 80 manually (soft limit),
+# but the formatter won't force a break until 100.
+ColumnLimit: 100
+
+# 2.2 Types: Pointer Syntax
+# Align pointer to the variable (int *ptr), not the type
+PointerAlignment: Right
+
+# Spacing Nuances
+# "if (condition)" -> Space included
+# "function(param)" -> No space
+SpaceBeforeParens: ControlStatements
+# Keep empty parentheses compact: "function()" not "function( )"
+SpaceInEmptyParentheses: false
+# No space after cast: "(int)var"
+SpaceAfterCStyleCast: false
+
+# Alignment Features
+# Aligns arguments/parameters on new lines to the opening bracket
+# func(param1,
+#      param2);
+AlignAfterOpenBracket: Align
+# Aligns trailing comments (good for struct documentation)
+AlignTrailingComments: true
+# Prevents aligning variable declarations (reduces diff noise)
+AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: false
+
+# 2.5 Headers
+# Sorts includes alphabetically
+SortIncludes: CaseInsensitive

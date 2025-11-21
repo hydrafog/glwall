@@ -1,16 +1,16 @@
 /**
  * @file wayland.c
  * @brief Implementation of Wayland compositor integration
- * 
+ *
  * This file handles Wayland display connection, registry event handling,
  * output discovery, layer surface creation, and frame callbacks.
  */
 
-#include <string.h>
-#include <stdlib.h>
 #include "wayland.h"
-#include "utils.h"
 #include "opengl.h"
+#include "utils.h"
+#include <stdlib.h>
+#include <string.h>
 
 // Include the generated protocol header to ensure all definitions are available.
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -21,9 +21,11 @@
 // Private Function Declarations
 
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time);
-static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface, uint32_t serial, uint32_t w, uint32_t h);
+static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface,
+                                    uint32_t serial, uint32_t w, uint32_t h);
 static void layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface);
-static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
+static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name,
+                                   const char *interface, uint32_t version);
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 
 // Seat and pointer input handling (for iMouse)
@@ -31,19 +33,22 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
 static void seat_handle_name(void *data, struct wl_seat *seat, const char *name);
 
 static void pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
-    struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy);
+                                 struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy);
 static void pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
-    struct wl_surface *surface);
+                                 struct wl_surface *surface);
 static void pointer_handle_motion(void *data, struct wl_pointer *pointer, uint32_t time,
-    wl_fixed_t sx, wl_fixed_t sy);
+                                  wl_fixed_t sx, wl_fixed_t sy);
 static void pointer_handle_button(void *data, struct wl_pointer *pointer, uint32_t serial,
-    uint32_t time, uint32_t button, uint32_t button_state);
+                                  uint32_t time, uint32_t button, uint32_t button_state);
 static void pointer_handle_axis(void *data, struct wl_pointer *pointer, uint32_t time,
-    uint32_t axis, wl_fixed_t value);
+                                uint32_t axis, wl_fixed_t value);
 static void pointer_handle_frame(void *data, struct wl_pointer *pointer);
-static void pointer_handle_axis_source(void *data, struct wl_pointer *pointer, uint32_t axis_source);
-static void pointer_handle_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis);
-static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete);
+static void pointer_handle_axis_source(void *data, struct wl_pointer *pointer,
+                                       uint32_t axis_source);
+static void pointer_handle_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time,
+                                     uint32_t axis);
+static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis,
+                                         int32_t discrete);
 
 // Listener Implementations
 
@@ -84,10 +89,12 @@ const struct wl_callback_listener frame_listener = {
  * @param w New width in pixels
  * @param h New height in pixels
  */
-static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface, uint32_t serial, uint32_t w, uint32_t h) {
+static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *surface,
+                                    uint32_t serial, uint32_t w, uint32_t h) {
     struct glwall_output *output = data;
     struct glwall_state *state = output->state;
-    LOG_DEBUG(state, "[EVENT] layer_surface_configure for output %u: serial=%u, w=%u, h=%u", output->output_name, serial, w, h);
+    LOG_DEBUG(state, "[EVENT] layer_surface_configure for output %u: serial=%u, w=%u, h=%u",
+              output->output_name, serial, w, h);
 
     if (surface == output->layer_surface) {
         // Main wallpaper surface
@@ -110,7 +117,9 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
         // We only do this if OpenGL has been initialized, as configure events can
         // happen before the renderer is ready.
         if (state->shader_program != 0) {
-            LOG_DEBUG(state, "OpenGL is ready, triggering re-render for output %u due to configure event.", output->output_name);
+            LOG_DEBUG(state,
+                      "OpenGL is ready, triggering re-render for output %u due to configure event.",
+                      output->output_name);
             render_frame(output);
         }
     } else if (surface == output->overlay_layer_surface) {
@@ -122,14 +131,16 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
         }
 
         struct wl_region *region = wl_compositor_create_region(state->compositor);
-        if (!region) return;
+        if (!region)
+            return;
 
         if (state->mouse_overlay_mode == GLWALL_MOUSE_OVERLAY_EDGE) {
             int edge_h = state->mouse_overlay_edge_height;
             if (edge_h > 0) {
                 // Bottom edge strip: x=0..w, y=(h-edge_h)..h
                 int y = (int)h - edge_h;
-                if (y < 0) y = 0;
+                if (y < 0)
+                    y = 0;
                 wl_region_add(region, 0, y, (int)w, edge_h);
             }
         } else if (state->mouse_overlay_mode == GLWALL_MOUSE_OVERLAY_FULL) {
@@ -140,7 +151,8 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
         wl_region_destroy(region);
         wl_surface_commit(output->overlay_surface);
 
-        LOG_DEBUG(state, "Configured mouse overlay input region for output %u", output->output_name);
+        LOG_DEBUG(state, "Configured mouse overlay input region for output %u",
+                  output->output_name);
     }
 }
 
@@ -198,10 +210,12 @@ static const struct wl_pointer_listener pointer_listener = {
  * @param interface Interface name string (e.g., "wl_compositor")
  * @param version Protocol version advertised by the compositor
  */
-static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
+static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t name,
+                                   const char *interface, uint32_t version) {
     UNUSED(version);
     struct glwall_state *state = data;
-    LOG_DEBUG(state, "[EVENT] registry_handle_global: name=%u, interface=%s, version=%u", name, interface, version);
+    LOG_DEBUG(state, "[EVENT] registry_handle_global: name=%u, interface=%s, version=%u", name,
+              interface, version);
 
     if (strcmp(interface, wl_compositor_interface.name) == 0) {
         LOG_DEBUG(state, "Binding wl_compositor");
@@ -221,8 +235,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
         // version supported by our generated headers.
         uint32_t interface_version = (uint32_t)zwlr_layer_shell_v1_interface.version;
         uint32_t bind_version = (version < interface_version) ? version : interface_version;
-        LOG_DEBUG(state, "Binding zwlr_layer_shell_v1 (offered v%u, client supports v%u, binding v%u)", version, zwlr_layer_shell_v1_interface.version, bind_version);
-        state->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, bind_version);
+        LOG_DEBUG(state,
+                  "Binding zwlr_layer_shell_v1 (offered v%u, client supports v%u, binding v%u)",
+                  version, zwlr_layer_shell_v1_interface.version, bind_version);
+        state->layer_shell =
+            wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, bind_version);
     } else if (strcmp(interface, wl_output_interface.name) == 0) {
         LOG_DEBUG(state, "Binding wl_output %u", name);
         struct glwall_output *output = calloc(1, sizeof(struct glwall_output));
@@ -263,6 +280,18 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_handle_global_remove,
 };
 
+/**
+ * @brief Seat capabilities event handler
+ *
+ * Handles changes to seat capabilities and sets up or tears down the
+ * wl_pointer accordingly. When pointer capability appears, creates a
+ * wl_pointer and attaches the pointer listener; when it disappears,
+ * destroys the pointer.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param seat wl_seat associated with the event
+ * @param caps Capability bitmask reported by the compositor
+ */
 // Seat listener implementations
 static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t caps) {
     struct glwall_state *state = data;
@@ -291,23 +320,57 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
     }
 }
 
+/**
+ * @brief Seat name event handler
+ *
+ * Logs the human-readable name of the Wayland seat for debugging.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param seat wl_seat associated with the event
+ * @param name Seat name string reported by the compositor
+ */
 static void seat_handle_name(void *data, struct wl_seat *seat, const char *name) {
     struct glwall_state *state = data;
     UNUSED(seat);
     LOG_DEBUG(state, "[EVENT] seat name: %s", name);
 }
 
+/**
+ * @brief Find output associated with a Wayland surface
+ *
+ * Searches the linked list of outputs for the one whose wl_surface matches
+ * the given surface pointer.
+ *
+ * @param state Pointer to global application state
+ * @param surface Wayland surface to search for
+ * @return Matching glwall_output pointer, or NULL if none is found
+ */
 // Helper to find output by its wl_surface pointer.
-static struct glwall_output *find_output_for_surface(struct glwall_state *state, struct wl_surface *surface) {
+static struct glwall_output *find_output_for_surface(struct glwall_state *state,
+                                                     struct wl_surface *surface) {
     for (struct glwall_output *output = state->outputs; output; output = output->next) {
-        if (output->wl_surface == surface) return output;
+        if (output->wl_surface == surface)
+            return output;
     }
     return NULL;
 }
 
+/**
+ * @brief Pointer enter event handler
+ *
+ * Records which output the pointer entered and updates pointer coordinates
+ * in surface space for iMouse-style shader uniforms.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param pointer wl_pointer associated with the event
+ * @param serial Compositor serial for the enter event
+ * @param surface Surface the pointer entered
+ * @param sx X coordinate in fixed-point surface coordinates
+ * @param sy Y coordinate in fixed-point surface coordinates
+ */
 // Pointer listener implementations
 static void pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
-    struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy) {
+                                 struct wl_surface *surface, wl_fixed_t sx, wl_fixed_t sy) {
     UNUSED(pointer);
     UNUSED(serial);
     struct glwall_state *state = data;
@@ -324,8 +387,19 @@ static void pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_
     }
 }
 
+/**
+ * @brief Pointer leave event handler
+ *
+ * Clears the pointer_output when the pointer leaves a surface so shaders
+ * no longer receive mouse coordinates for that output.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param pointer wl_pointer associated with the event
+ * @param serial Compositor serial for the leave event
+ * @param surface Surface the pointer left
+ */
 static void pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
-    struct wl_surface *surface) {
+                                 struct wl_surface *surface) {
     UNUSED(pointer);
     UNUSED(serial);
     struct glwall_state *state = data;
@@ -335,8 +409,20 @@ static void pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_
     state->pointer_output = NULL;
 }
 
+/**
+ * @brief Pointer motion event handler
+ *
+ * Updates the current pointer coordinates within the active output surface
+ * so they can be exposed to shaders via iMouse/mouse uniforms.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param pointer wl_pointer associated with the event
+ * @param time Compositor timestamp
+ * @param sx X coordinate in fixed-point surface coordinates
+ * @param sy Y coordinate in fixed-point surface coordinates
+ */
 static void pointer_handle_motion(void *data, struct wl_pointer *pointer, uint32_t time,
-    wl_fixed_t sx, wl_fixed_t sy) {
+                                  wl_fixed_t sx, wl_fixed_t sy) {
     UNUSED(pointer);
     UNUSED(time);
     struct glwall_state *state = data;
@@ -345,11 +431,25 @@ static void pointer_handle_motion(void *data, struct wl_pointer *pointer, uint32
     state->pointer_y = wl_fixed_to_double(sy);
 }
 
+/**
+ * @brief Pointer button event handler
+ *
+ * Tracks primary button press and release for iMouse semantics, storing
+ * the click position and a boolean pressed state in the global state.
+ *
+ * @param data Pointer to glwall_state structure
+ * @param pointer wl_pointer associated with the event
+ * @param serial Compositor serial for the button event
+ * @param time Compositor timestamp
+ * @param button Button code (e.g., BTN_LEFT)
+ * @param button_state WL_POINTER_BUTTON_STATE_PRESSED or _RELEASED
+ */
 static void pointer_handle_button(void *data, struct wl_pointer *pointer, uint32_t serial,
-    uint32_t time, uint32_t button, uint32_t button_state) {
+                                  uint32_t time, uint32_t button, uint32_t button_state) {
     UNUSED(pointer);
     UNUSED(serial);
     UNUSED(time);
+    UNUSED(button);
     struct glwall_state *state = data;
 
     // Treat any pressed button as primary for iMouse semantics.
@@ -357,16 +457,27 @@ static void pointer_handle_button(void *data, struct wl_pointer *pointer, uint32
         state->pointer_down = true;
         state->pointer_down_x = state->pointer_x;
         state->pointer_down_y = state->pointer_y;
-        LOG_DEBUG(state, "[EVENT] pointer_button press at (%.1f, %.1f)",
-                  state->pointer_down_x, state->pointer_down_y);
+        LOG_DEBUG(state, "[EVENT] pointer_button press at (%.1f, %.1f)", state->pointer_down_x,
+                  state->pointer_down_y);
     } else if (button_state == WL_POINTER_BUTTON_STATE_RELEASED) {
         state->pointer_down = false;
         LOG_DEBUG(state, "[EVENT] pointer_button release");
     }
 }
 
+/**
+ * @brief Pointer axis event handler (scroll)
+ *
+ * Currently unused; parameters are marked unused to avoid compiler warnings.
+ *
+ * @param data Pointer to user data (unused)
+ * @param pointer wl_pointer associated with the event (unused)
+ * @param time Compositor timestamp (unused)
+ * @param axis Axis that changed (unused)
+ * @param value Axis delta in fixed-point units (unused)
+ */
 static void pointer_handle_axis(void *data, struct wl_pointer *pointer, uint32_t time,
-    uint32_t axis, wl_fixed_t value) {
+                                uint32_t axis, wl_fixed_t value) {
     UNUSED(data);
     UNUSED(pointer);
     UNUSED(time);
@@ -374,31 +485,73 @@ static void pointer_handle_axis(void *data, struct wl_pointer *pointer, uint32_t
     UNUSED(value);
 }
 
+/**
+ * @brief Pointer frame event handler
+ *
+ * Called after a group of pointer events; currently no batching behavior
+ * is needed so this is a no-op.
+ *
+ * @param data Pointer to user data (unused)
+ * @param pointer wl_pointer associated with the event (unused)
+ */
 static void pointer_handle_frame(void *data, struct wl_pointer *pointer) {
     UNUSED(data);
     UNUSED(pointer);
 }
 
-static void pointer_handle_axis_source(void *data, struct wl_pointer *pointer, uint32_t axis_source) {
+/**
+ * @brief Pointer axis source event handler
+ *
+ * Receives information about the source of scroll events (e.g., wheel,
+ * finger), but this implementation ignores it.
+ *
+ * @param data Pointer to user data (unused)
+ * @param pointer wl_pointer associated with the event (unused)
+ * @param axis_source Axis source code (unused)
+ */
+static void pointer_handle_axis_source(void *data, struct wl_pointer *pointer,
+                                       uint32_t axis_source) {
     UNUSED(data);
     UNUSED(pointer);
     UNUSED(axis_source);
 }
 
-static void pointer_handle_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time, uint32_t axis) {
+/**
+ * @brief Pointer axis stop event handler
+ *
+ * Indicates the end of a scroll gesture; currently ignored.
+ *
+ * @param data Pointer to user data (unused)
+ * @param pointer wl_pointer associated with the event (unused)
+ * @param time Compositor timestamp (unused)
+ * @param axis Axis that stopped (unused)
+ */
+static void pointer_handle_axis_stop(void *data, struct wl_pointer *pointer, uint32_t time,
+                                     uint32_t axis) {
     UNUSED(data);
     UNUSED(pointer);
     UNUSED(time);
     UNUSED(axis);
 }
 
-static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis, int32_t discrete) {
+/**
+ * @brief Pointer axis discrete event handler
+ *
+ * Receives discrete scroll steps (e.g., wheel notches). This implementation
+ * does not use scroll input, so the parameters are ignored.
+ *
+ * @param data Pointer to user data (unused)
+ * @param pointer wl_pointer associated with the event (unused)
+ * @param axis Axis being scrolled (unused)
+ * @param discrete Discrete step value (unused)
+ */
+static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis,
+                                         int32_t discrete) {
     UNUSED(data);
     UNUSED(pointer);
     UNUSED(axis);
     UNUSED(discrete);
 }
-
 
 // Public Function Implementations
 
@@ -469,10 +622,12 @@ void create_layer_surfaces(struct glwall_state *state) {
             return;
         }
 
-        zwlr_layer_surface_v1_set_anchor(output->layer_surface,
+        zwlr_layer_surface_v1_set_anchor(
+            output->layer_surface,
             ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-        zwlr_layer_surface_v1_set_keyboard_interactivity(output->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+                ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+        zwlr_layer_surface_v1_set_keyboard_interactivity(
+            output->layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
         zwlr_layer_surface_v1_set_exclusive_zone(output->layer_surface, -1);
         wl_surface_commit(output->wl_surface);
 
@@ -487,18 +642,22 @@ void create_layer_surfaces(struct glwall_state *state) {
                 state->layer_shell, output->overlay_surface, output->wl_output,
                 ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "glwall-mouse-overlay");
             if (!output->overlay_layer_surface) {
-                LOG_ERROR("Failed to create overlay layer surface for output %u", output->output_name);
+                LOG_ERROR("Failed to create overlay layer surface for output %u",
+                          output->output_name);
                 return;
             }
 
-            zwlr_layer_surface_v1_add_listener(output->overlay_layer_surface, &layer_surface_listener, output);
+            zwlr_layer_surface_v1_add_listener(output->overlay_layer_surface,
+                                               &layer_surface_listener, output);
 
             // Anchor overlay to the full output, but restrict input using regions
             // in the configure handler based on mouse_overlay_mode.
-            zwlr_layer_surface_v1_set_anchor(output->overlay_layer_surface,
+            zwlr_layer_surface_v1_set_anchor(
+                output->overlay_layer_surface,
                 ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-                ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-            zwlr_layer_surface_v1_set_keyboard_interactivity(output->overlay_layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+                    ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+            zwlr_layer_surface_v1_set_keyboard_interactivity(
+                output->overlay_layer_surface, ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
             zwlr_layer_surface_v1_set_exclusive_zone(output->overlay_layer_surface, 0);
             wl_surface_commit(output->overlay_surface);
         }
@@ -531,26 +690,35 @@ void start_rendering(struct glwall_state *state) {
 
 /**
  * @brief Cleans up Wayland resources
- * 
+ *
  * Destroys all layer surfaces, Wayland surfaces, outputs, and disconnects
  * from the display.
- * 
+ *
  * @param state Pointer to global application state
  */
 void cleanup_wayland(struct glwall_state *state) {
     struct glwall_output *output = state->outputs;
     while (output) {
-        if (output->overlay_layer_surface) zwlr_layer_surface_v1_destroy(output->overlay_layer_surface);
-        if (output->overlay_surface) wl_surface_destroy(output->overlay_surface);
-        if (output->layer_surface) zwlr_layer_surface_v1_destroy(output->layer_surface);
-        if (output->wl_surface) wl_surface_destroy(output->wl_surface);
-        if (output->wl_output) wl_output_destroy(output->wl_output);
+        if (output->overlay_layer_surface)
+            zwlr_layer_surface_v1_destroy(output->overlay_layer_surface);
+        if (output->overlay_surface)
+            wl_surface_destroy(output->overlay_surface);
+        if (output->layer_surface)
+            zwlr_layer_surface_v1_destroy(output->layer_surface);
+        if (output->wl_surface)
+            wl_surface_destroy(output->wl_surface);
+        if (output->wl_output)
+            wl_output_destroy(output->wl_output);
         struct glwall_output *next = output->next;
         free(output);
         output = next;
     }
-    if (state->layer_shell) zwlr_layer_shell_v1_destroy(state->layer_shell);
-    if (state->compositor) wl_compositor_destroy(state->compositor);
-    if (state->registry) wl_registry_destroy(state->registry);
-    if (state->display) wl_display_disconnect(state->display);
+    if (state->layer_shell)
+        zwlr_layer_shell_v1_destroy(state->layer_shell);
+    if (state->compositor)
+        wl_compositor_destroy(state->compositor);
+    if (state->registry)
+        wl_registry_destroy(state->registry);
+    if (state->display)
+        wl_display_disconnect(state->display);
 }

@@ -84,6 +84,19 @@
         devShells.default = pkgs.mkShell {
           inputsFrom = [ glwallPackage ];
           
+          # Add Python packages for the builder agent
+          buildInputs = with pkgs; [
+            (python3.withPackages (ps: with ps; [
+              langchain
+              langchain-openai
+              langchain-google-genai
+              langgraph
+              pydantic
+              chromadb
+              requests
+            ]))
+          ];
+          
           shellHook = ''
             export WAYLAND_PROTOCOLS_DIR="${pkgs.wayland-protocols}/share/wayland-protocols"
             export WLR_PROTOCOLS_DIR="${pkgs.wlr-protocols}/share/wlr-protocols"
@@ -98,6 +111,11 @@
             echo "Run:"
             echo "  cd src && ./glwall -s ../shaders/retrowave.glsl --debug"
             echo ""
+            echo "Builder Agent:"
+            echo "  cd .ai/builder && python -m builder_agent.agent \"your request\""
+            echo "  All Python dependencies are managed by Nix"
+            echo ""
+            export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
           '';
         };
       }
@@ -144,9 +162,9 @@
               };
 
               source = lib.mkOption {
-                type = lib.types.enum [ "pulseaudio" "none" ];
+                type = lib.types.enum [ "pulseaudio" "fake" "none" ];
                 default = "pulseaudio";
-                description = "Audio backend to use for sound capture.";
+                description = "Audio backend to use for sound capture (pulseaudio for real audio, fake for synthetic debugging audio, none to disable).";
               };
             };
 
