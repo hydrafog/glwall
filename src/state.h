@@ -41,8 +41,8 @@ struct glwall_audio_state {
     bool enabled;
     bool backend_ready;
     GLuint texture;
-    int32_t tex_width;
-    int32_t tex_height;
+    int32_t tex_width_px;
+    int32_t tex_height_px;
     void *impl;
 };
 
@@ -58,8 +58,8 @@ struct glwall_output {
     struct zwlr_layer_surface_v1 *overlay_layer_surface;
 
     uint32_t output_name;
-    int32_t width;
-    int32_t height;
+    int32_t width_px;
+    int32_t height_px;
     bool configured;
     struct wl_callback_listener frame_listener;
     struct glwall_output *next;
@@ -72,7 +72,7 @@ struct glwall_state {
 
     enum glwall_power_mode power_mode;
     enum glwall_mouse_overlay_mode mouse_overlay_mode;
-    int32_t mouse_overlay_edge_height;
+    int32_t mouse_overlay_edge_height_px;
     bool audio_enabled;
     enum glwall_audio_source audio_source;
     const char *audio_device_name;

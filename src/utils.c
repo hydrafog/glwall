@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <assert.h>
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
@@ -7,10 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
- 
 #define READ_FILE_MAX_SIZE (10 * 1024 * 1024)
 
 char *read_file(const char *path) {
+    assert(path != NULL);
+
     FILE *file = fopen(path, "r");
     if (!file) {
         LOG_ERROR("File operation failed: unable to open '%s' (errno: %s)", path, strerror(errno));
@@ -19,7 +21,8 @@ char *read_file(const char *path) {
     fseek(file, 0, SEEK_END);
     long length = ftell(file);
     if (length < 0) {
-        LOG_ERROR("File operation failed: unable to determine size for '%s' (errno: %s)", path, strerror(errno));
+        LOG_ERROR("File operation failed: unable to determine size for '%s' (errno: %s)", path,
+                  strerror(errno));
         fclose(file);
         return NULL;
     }
@@ -32,24 +35,24 @@ char *read_file(const char *path) {
         return NULL;
     }
 
-     
     if (length < 0 || (size_t)length + 1 == 0) {
-        LOG_ERROR("File operation failed: invalid size for '%s' (errno: %s)", path, strerror(errno));
+        LOG_ERROR("File operation failed: invalid size for '%s' (errno: %s)", path,
+                  strerror(errno));
         fclose(file);
         return NULL;
     }
 
     char *buffer = malloc((size_t)length + 1);
     if (!buffer) {
-        LOG_ERROR("Memory allocation failed: insufficient memory for file contents");
+        LOG_ERROR("%s", "Memory allocation failed: insufficient memory for file contents");
         fclose(file);
         return NULL;
     }
 
     size_t read_length = fread(buffer, 1, length, file);
     if (read_length != (size_t)length) {
-        LOG_ERROR("File read operation failed: '%s' (bytes read: %zu, expected: %ld)", path, read_length,
-                  length);
+        LOG_ERROR("File read operation failed: '%s' (bytes read: %zu, expected: %ld)", path,
+                  read_length, length);
         free(buffer);
         fclose(file);
         return NULL;
@@ -60,10 +63,12 @@ char *read_file(const char *path) {
     return buffer;
 }
 
- 
 #define MAX_VERTEX_COUNT (1 << 20)
 
 void parse_options(int argc, char *argv[], struct glwall_state *state) {
+    assert(argv != NULL);
+    assert(state != NULL);
+
     LOG_DEBUG(state, "Configuration parsing: processing command-line arguments (%d total)", argc);
     struct option long_options[] = {{"shader", required_argument, 0, 's'},
                                     {"debug", no_argument, 0, 'd'},
@@ -89,35 +94,39 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
             break;
         case 'd':
             state->debug = true;
-            LOG_DEBUG(state, "Configuration: debug mode enabled");
+            LOG_DEBUG(state, "%s", "Configuration: debug mode enabled");
             break;
         case 'p':
             if (strcmp(optarg, "full") == 0) {
                 state->power_mode = GLWALL_POWER_MODE_FULL;
-                LOG_DEBUG(state, "Configuration: power mode set to full");
+                LOG_DEBUG(state, "%s", "Configuration: power mode set to full");
             } else if (strcmp(optarg, "throttled") == 0) {
                 state->power_mode = GLWALL_POWER_MODE_THROTTLED;
-                LOG_DEBUG(state, "Configuration: power mode set to throttled");
+                LOG_DEBUG(state, "%s", "Configuration: power mode set to throttled");
             } else if (strcmp(optarg, "paused") == 0) {
                 state->power_mode = GLWALL_POWER_MODE_PAUSED;
-                LOG_DEBUG(state, "Configuration: power mode set to paused");
+                LOG_DEBUG(state, "%s", "Configuration: power mode set to paused");
             } else {
-                LOG_ERROR("Configuration error: invalid power mode '%s' (valid: full|throttled|paused)", optarg);
+                LOG_ERROR(
+                    "Configuration error: invalid power mode '%s' (valid: full|throttled|paused)",
+                    optarg);
                 exit(EXIT_FAILURE);
             }
             break;
         case 'm':
             if (strcmp(optarg, "none") == 0) {
                 state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_NONE;
-                LOG_DEBUG(state, "Configuration: mouse overlay mode set to none");
+                LOG_DEBUG(state, "%s", "Configuration: mouse overlay mode set to none");
             } else if (strcmp(optarg, "edge") == 0) {
                 state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_EDGE;
-                LOG_DEBUG(state, "Configuration: mouse overlay mode set to edge");
+                LOG_DEBUG(state, "%s", "Configuration: mouse overlay mode set to edge");
             } else if (strcmp(optarg, "full") == 0) {
                 state->mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_FULL;
-                LOG_DEBUG(state, "Configuration: mouse overlay mode set to full");
+                LOG_DEBUG(state, "%s", "Configuration: mouse overlay mode set to full");
             } else {
-                LOG_ERROR("Configuration error: invalid mouse overlay mode '%s' (valid: none|edge|full)", optarg);
+                LOG_ERROR(
+                    "Configuration error: invalid mouse overlay mode '%s' (valid: none|edge|full)",
+                    optarg);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -125,37 +134,40 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
             char *endptr;
             long h = strtol(optarg, &endptr, 10);
             if (endptr == optarg) {
-                LOG_ERROR("Configuration error: mouse-overlay-height is not a number");
+                LOG_ERROR("%s", "Configuration error: mouse-overlay-height is not a number");
                 exit(EXIT_FAILURE);
             }
             if (h <= 0 || h > INT32_MAX) {
-                LOG_ERROR("Configuration error: mouse-overlay-height must be between 1 and %d (received: %ld)", INT32_MAX, h);
+                LOG_ERROR("Configuration error: mouse-overlay-height must be between 1 and %d "
+                          "(received: %ld)",
+                          INT32_MAX, h);
                 exit(EXIT_FAILURE);
             }
-            state->mouse_overlay_edge_height = (int32_t)h;
+            state->mouse_overlay_edge_height_px = (int32_t)h;
             LOG_DEBUG(state, "Configuration: mouse overlay height set to %ld pixels", h);
             break;
         }
         case 1:
             state->audio_enabled = true;
-            LOG_DEBUG(state, "Configuration: audio subsystem enabled");
+            LOG_DEBUG(state, "%s", "Configuration: audio subsystem enabled");
             break;
         case 2:
             state->audio_enabled = false;
-            LOG_DEBUG(state, "Configuration: audio subsystem disabled");
+            LOG_DEBUG(state, "%s", "Configuration: audio subsystem disabled");
             break;
         case 3:
             if (strcmp(optarg, "pulse") == 0 || strcmp(optarg, "pulseaudio") == 0) {
                 state->audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
-                LOG_DEBUG(state, "Configuration: audio source set to PulseAudio");
+                LOG_DEBUG(state, "%s", "Configuration: audio source set to PulseAudio");
             } else if (strcmp(optarg, "none") == 0) {
                 state->audio_source = GLWALL_AUDIO_SOURCE_NONE;
-                LOG_DEBUG(state, "Configuration: audio source set to none");
+                LOG_DEBUG(state, "%s", "Configuration: audio source set to none");
             } else if (strcmp(optarg, "fake") == 0 || strcmp(optarg, "debug") == 0) {
                 state->audio_source = GLWALL_AUDIO_SOURCE_FAKE;
-                LOG_DEBUG(state, "Configuration: audio source set to fake (diagnostic mode)");
+                LOG_DEBUG(state, "%s", "Configuration: audio source set to fake (diagnostic mode)");
             } else {
-                LOG_ERROR("Configuration error: invalid audio source '%s' (valid: pulse|pulseaudio|fake|debug|none)",
+                LOG_ERROR("Configuration error: invalid audio source '%s' (valid: "
+                          "pulse|pulseaudio|fake|debug|none)",
                           optarg);
                 exit(EXIT_FAILURE);
             }
@@ -171,17 +183,19 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
             break;
         case 'V':
             state->allow_vertex_shaders = true;
-            LOG_DEBUG(state, "Configuration: vertex shader support enabled");
+            LOG_DEBUG(state, "%s", "Configuration: vertex shader support enabled");
             break;
         case 4: {
             char *endptr;
             long v = strtol(optarg, &endptr, 10);
             if (endptr == optarg) {
-                LOG_ERROR("Configuration error: vertex-count is not a number");
+                LOG_ERROR("%s", "Configuration error: vertex-count is not a number");
                 exit(EXIT_FAILURE);
             }
             if (v <= 0 || v > INT32_MAX || v > MAX_VERTEX_COUNT) {
-                LOG_ERROR("Configuration error: vertex-count must be between 1 and %d (received: %ld)", INT32_MAX, v);
+                LOG_ERROR(
+                    "Configuration error: vertex-count must be between 1 and %d (received: %ld)",
+                    INT32_MAX, v);
                 exit(EXIT_FAILURE);
             }
             state->vertex_count = (int32_t)v;
@@ -191,18 +205,19 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
         case 7:
             if (strcmp(optarg, "points") == 0) {
                 state->vertex_draw_mode = GL_POINTS;
-                LOG_DEBUG(state, "Configuration: vertex draw mode set to points");
+                LOG_DEBUG(state, "%s", "Configuration: vertex draw mode set to points");
             } else if (strcmp(optarg, "lines") == 0) {
                 state->vertex_draw_mode = GL_LINES;
-                LOG_DEBUG(state, "Configuration: vertex draw mode set to lines");
+                LOG_DEBUG(state, "%s", "Configuration: vertex draw mode set to lines");
             } else {
-                LOG_ERROR("Configuration error: invalid vertex mode '%s' (valid: points|lines)", optarg);
+                LOG_ERROR("Configuration error: invalid vertex mode '%s' (valid: points|lines)",
+                          optarg);
                 exit(EXIT_FAILURE);
             }
             break;
         case 8:
             state->kernel_input_enabled = true;
-            LOG_DEBUG(state, "Configuration: kernel input device monitoring enabled");
+            LOG_DEBUG(state, "%s", "Configuration: kernel input device monitoring enabled");
             break;
         default:
             fprintf(
@@ -216,7 +231,8 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
         }
     }
     if (!state->shader_path && !state->vertex_shader_path) {
-        LOG_ERROR("Configuration error: shader path is required (use -s /path/to/shader.frag)");
+        LOG_ERROR("%s",
+                  "Configuration error: shader path is required (use -s /path/to/shader.frag)");
         exit(EXIT_FAILURE);
     }
 }

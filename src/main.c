@@ -13,7 +13,7 @@
 static void run_main_loop(struct glwall_state *state);
 
 static void run_main_loop(struct glwall_state *state) {
-    LOG_INFO("Render loop started");
+    LOG_INFO("%s", "Render loop started");
 
     while (state->running && wl_display_dispatch(state->display) != -1) {
     }
@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
     state.running = true;
     state.power_mode = GLWALL_POWER_MODE_FULL;
     state.mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_NONE;
-    state.mouse_overlay_edge_height = 32;
+    state.mouse_overlay_edge_height_px = 32;
     state.audio_enabled = false;
     state.audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
     state.audio_device_name = NULL;
@@ -38,44 +38,44 @@ int main(int argc, char *argv[]) {
     state.input_impl = NULL;
 
     parse_options(argc, argv, &state);
-    LOG_DEBUG(&state, "Configuration parsing completed");
+    LOG_DEBUG(&state, "%s", "Configuration parsing completed");
 
     if (!init_wayland(&state))
         goto cleanup;
-    LOG_DEBUG(&state, "Wayland subsystem initialization succeeded");
+    LOG_DEBUG(&state, "%s", "Wayland subsystem initialization succeeded");
     create_layer_surfaces(&state);
-    LOG_DEBUG(&state, "Layer surfaces created");
+    LOG_DEBUG(&state, "%s", "Layer surfaces created");
     if (!state.running)
         goto cleanup;
 
     if (!init_egl(&state))
         goto cleanup;
-    LOG_DEBUG(&state, "EGL subsystem initialization succeeded");
+    LOG_DEBUG(&state, "%s", "EGL subsystem initialization succeeded");
     if (!init_opengl(&state))
         goto cleanup;
-    LOG_DEBUG(&state, "OpenGL subsystem initialization succeeded");
+    LOG_DEBUG(&state, "%s", "OpenGL subsystem initialization succeeded");
 
     if (state.kernel_input_enabled) {
         init_input(&state);
-        LOG_DEBUG(&state, "Input subsystem initialization completed");
+        LOG_DEBUG(&state, "%s", "Input subsystem initialization completed");
     }
 
     clock_gettime(CLOCK_MONOTONIC, &state.start_time);
-    LOG_DEBUG(&state, "Frame timer initialized");
+    LOG_DEBUG(&state, "%s", "Frame timer initialized");
 
     start_rendering(&state);
     run_main_loop(&state);
 
 cleanup:
-    LOG_INFO("Application shutdown initiated");
-    LOG_DEBUG(&state, "Cleanup sequence: terminating input subsystem");
+    LOG_INFO("%s", "Application shutdown initiated");
+    LOG_DEBUG(&state, "%s", "Cleanup sequence: terminating input subsystem");
     cleanup_input(&state);
-    LOG_DEBUG(&state, "Cleanup sequence: terminating OpenGL subsystem");
+    LOG_DEBUG(&state, "%s", "Cleanup sequence: terminating OpenGL subsystem");
     cleanup_opengl(&state);
-    LOG_DEBUG(&state, "Cleanup sequence: terminating EGL subsystem");
+    LOG_DEBUG(&state, "%s", "Cleanup sequence: terminating EGL subsystem");
     cleanup_egl(&state);
-    LOG_DEBUG(&state, "Cleanup sequence: terminating Wayland subsystem");
+    LOG_DEBUG(&state, "%s", "Cleanup sequence: terminating Wayland subsystem");
     cleanup_wayland(&state);
-    LOG_DEBUG(&state, "Application shutdown completed");
+    LOG_DEBUG(&state, "%s", "Application shutdown completed");
     return EXIT_SUCCESS;
 }

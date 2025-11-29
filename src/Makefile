@@ -1,6 +1,6 @@
 CC = gcc
 PKGS = wayland-client wayland-egl egl gl glew libpulse-simple libpulse libevdev
-CFLAGS = -std=c11 -Wall -Wextra -g $(shell pkg-config --cflags $(PKGS)) $(EXTRA_CFLAGS)
+CFLAGS = -std=c11 -Wall -Wextra -Werror -Wpedantic -g $(shell pkg-config --cflags $(PKGS)) $(EXTRA_CFLAGS)
 LDFLAGS = $(shell pkg-config --libs $(PKGS)) -lm
 
 ifeq ($(WAYLAND_PROTOCOLS_DIR),)

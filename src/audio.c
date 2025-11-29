@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "state.h"
+#include <assert.h>
 
 #include "audio.h"
 #include "utils.h"
@@ -11,15 +12,17 @@
 #include <pulse/mainloop.h>
 #include <pulse/simple.h>
 
+#include <fcntl.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <limits.h>
-#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define GLWALL_AUDIO_TEX_WIDTH 512
-#define GLWALL_AUDIO_TEX_HEIGHT 240
+#define GLWALL_AUDIO_TEX_HEIGHT 2
+#define GLWALL_AUDIO_TEX_ROW_WAVEFORM 0
+#define GLWALL_AUDIO_TEX_ROW_SPECTRUM 1
 #define GLWALL_AUDIO_NORMALIZATION 32768.0f
 
 struct glwall_audio_impl {
@@ -36,7 +39,8 @@ struct pa_monitor_data {
 static void sink_info_callback(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
     struct pa_monitor_data *data = userdata;
     if (eol < 0) {
-        LOG_ERROR("PulseAudio operation failed: unable to retrieve sink information (error: %s)", pa_strerror(pa_context_errno(c)));
+        LOG_ERROR("PulseAudio operation failed: unable to retrieve sink information (error: %s)",
+                  pa_strerror(pa_context_errno(c)));
         return;
     }
     if (eol > 0)
@@ -47,7 +51,9 @@ static void sink_info_callback(pa_context *c, const pa_sink_info *i, int eol, vo
             free(data->monitor_source);
         data->monitor_source = strdup(i->monitor_source_name);
         if (!data->monitor_source) {
-            LOG_ERROR("Memory allocation failed: insufficient memory for audio monitor source name");
+            LOG_ERROR(
+                "%s",
+                "Memory allocation failed: insufficient memory for audio monitor source name");
             pa_mainloop_quit(data->mainloop, -1);
             return;
         }
@@ -58,7 +64,8 @@ static void sink_info_callback(pa_context *c, const pa_sink_info *i, int eol, vo
 static void server_info_callback(pa_context *c, const pa_server_info *i, void *userdata) {
     struct pa_monitor_data *data = userdata;
     if (!i) {
-        LOG_ERROR("PulseAudio operation failed: unable to retrieve server information (error: %s)", pa_strerror(pa_context_errno(c)));
+        LOG_ERROR("PulseAudio operation failed: unable to retrieve server information (error: %s)",
+                  pa_strerror(pa_context_errno(c)));
         pa_mainloop_quit(data->mainloop, -1);
         return;
     }
@@ -108,8 +115,8 @@ static void glwall_audio_reset(struct glwall_state *state) {
         glDeleteTextures(1, &state->audio.texture);
         state->audio.texture = 0;
     }
-    state->audio.tex_width = 0;
-    state->audio.tex_height = 0;
+    state->audio.tex_width_px = 0;
+    state->audio.tex_height_px = 0;
 
     if (state->audio.impl) {
         struct glwall_audio_impl *impl = state->audio.impl;
@@ -123,6 +130,7 @@ static void glwall_audio_reset(struct glwall_state *state) {
 }
 
 bool init_audio(struct glwall_state *state) {
+    assert(state != NULL);
 
     if (!state->audio_enabled || state->audio_source == GLWALL_AUDIO_SOURCE_NONE) {
         glwall_audio_reset(state);
@@ -130,11 +138,13 @@ bool init_audio(struct glwall_state *state) {
     }
 
     if (state->audio_source == GLWALL_AUDIO_SOURCE_FAKE) {
-        LOG_INFO("Audio subsystem initialization: fake audio backend selected for diagnostics");
+        LOG_INFO("%s",
+                 "Audio subsystem initialization: fake audio backend selected for diagnostics");
 
         struct glwall_audio_impl *impl = calloc(1, sizeof(struct glwall_audio_impl));
         if (!impl) {
-            LOG_ERROR("Memory allocation failed: insufficient memory for audio backend state");
+            LOG_ERROR("%s",
+                      "Memory allocation failed: insufficient memory for audio backend state");
             glwall_audio_reset(state);
             return false;
         }
@@ -154,33 +164,33 @@ bool init_audio(struct glwall_state *state) {
         GLint swizzleMask[] = {GL_RED, GL_RED, GL_RED, GL_RED};
         glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
 
-        state->audio.tex_width = GLWALL_AUDIO_TEX_WIDTH;
-        state->audio.tex_height = GLWALL_AUDIO_TEX_HEIGHT;
+        state->audio.tex_width_px = GLWALL_AUDIO_TEX_WIDTH;
+        state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width, state->audio.tex_height, 0,
-                     GL_RED, GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width_px,
+                     state->audio.tex_height_px, 0, GL_RED, GL_FLOAT, NULL);
 
         state->audio.texture = tex;
         state->audio.enabled = true;
         state->audio.backend_ready = true;
 
-        LOG_INFO("Audio resource created: texture (%dx%d) initialized for fake audio backend", state->audio.tex_width,
-                 state->audio.tex_height);
+        LOG_INFO("Audio resource created: texture (%dx%d) initialized for fake audio backend",
+                 state->audio.tex_width_px, state->audio.tex_height_px);
         return true;
     }
 
     if (state->audio_source != GLWALL_AUDIO_SOURCE_PULSEAUDIO) {
-        LOG_ERROR("Audio subsystem error: unsupported audio source selected");
+        LOG_ERROR("%s", "Audio subsystem error: unsupported audio source selected");
         glwall_audio_reset(state);
         return false;
     }
 
 #ifdef GLWALL_DISABLE_PULSEAUDIO
-    LOG_ERROR("Audio subsystem error: PulseAudio support was disabled at build time");
+    LOG_ERROR("%s", "Audio subsystem error: PulseAudio support was disabled at build time");
     glwall_audio_reset(state);
     return false;
 #else
-    LOG_INFO("Audio subsystem initialization: PulseAudio backend initialization commenced");
+    LOG_INFO("%s", "Audio subsystem initialization: PulseAudio backend initialization commenced");
 
     pa_sample_spec ss;
     ss.format = PA_SAMPLE_S16LE;
@@ -194,7 +204,7 @@ bool init_audio(struct glwall_state *state) {
     bufattr.minreq = (uint32_t)-1;
 
     bufattr.fragsize = (uint32_t)-1;
-    LOG_DEBUG(state, "Audio buffer fragsize: auto");
+    LOG_DEBUG(state, "%s", "Audio buffer fragsize: auto");
 
     int error = 0;
     char *device = (char *)state->audio_device_name;
@@ -206,10 +216,13 @@ bool init_audio(struct glwall_state *state) {
 
         monitor_source = get_default_monitor_source();
         if (monitor_source) {
-        LOG_INFO("Audio subsystem detection: monitor source '%s' auto-detected", monitor_source);
+            LOG_INFO("Audio subsystem detection: monitor source '%s' auto-detected",
+                     monitor_source);
             device = monitor_source;
         } else {
-            LOG_WARN("Audio subsystem warning: unable to auto-detect monitor source, using default");
+            LOG_WARN(
+                "%s",
+                "Audio subsystem warning: unable to auto-detect monitor source, using default");
         }
     }
 
@@ -220,14 +233,15 @@ bool init_audio(struct glwall_state *state) {
         free(monitor_source);
 
     if (!pa) {
-        LOG_ERROR("PulseAudio operation failed: unable to create recording stream (error: %s)", pa_strerror(error));
+        LOG_ERROR("PulseAudio operation failed: unable to create recording stream (error: %s)",
+                  pa_strerror(error));
         glwall_audio_reset(state);
         return false;
     }
 
     struct glwall_audio_impl *impl = calloc(1, sizeof(struct glwall_audio_impl));
     if (!impl) {
-        LOG_ERROR("Memory allocation failed: insufficient memory for audio backend state");
+        LOG_ERROR("%s", "Memory allocation failed: insufficient memory for audio backend state");
         pa_simple_free(pa);
         glwall_audio_reset(state);
         return false;
@@ -246,18 +260,19 @@ bool init_audio(struct glwall_state *state) {
     GLint swizzleMask[] = {GL_RED, GL_RED, GL_RED, GL_RED};
     glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
 
-    state->audio.tex_width = GLWALL_AUDIO_TEX_WIDTH;
-    state->audio.tex_height = GLWALL_AUDIO_TEX_HEIGHT;
+    state->audio.tex_width_px = GLWALL_AUDIO_TEX_WIDTH;
+    state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width, state->audio.tex_height, 0,
-                 GL_RED, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width_px, state->audio.tex_height_px,
+                 0, GL_RED, GL_FLOAT, NULL);
 
     state->audio.texture = tex;
     state->audio.enabled = true;
     state->audio.backend_ready = true;
 
-    LOG_INFO("Audio resource created: texture (%dx%d) for PulseAudio backend", state->audio.tex_width, state->audio.tex_height);
-    LOG_DEBUG(state, "Audio subsystem initialization completed successfully");
+    LOG_INFO("Audio resource created: texture (%dx%d) for PulseAudio backend",
+             state->audio.tex_width_px, state->audio.tex_height_px);
+    LOG_DEBUG(state, "%s", "Audio subsystem initialization completed successfully");
     return true;
 #endif
 }
@@ -340,6 +355,8 @@ static void generate_fake_audio(struct glwall_audio_impl *impl, int16_t *samples
 }
 
 void update_audio_texture(struct glwall_state *state) {
+    assert(state != NULL);
+
     if (!state->audio.enabled || !state->audio.backend_ready)
         return;
     if (!state->audio.impl)
@@ -353,8 +370,8 @@ void update_audio_texture(struct glwall_state *state) {
         return;
     }
 
-    int width = state->audio.tex_width;
-    int height = state->audio.tex_height;
+    int width = state->audio.tex_width_px;
+    int height = state->audio.tex_height_px;
     if (width <= 0 || height <= 0 || state->audio.texture == 0)
         return;
 
@@ -378,7 +395,7 @@ void update_audio_texture(struct glwall_state *state) {
     static int frame_count = 0;
     if (state->debug) {
         if (!debug_file) {
-             
+
             const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
             char tmpl[PATH_MAX];
             if (xdg_runtime && xdg_runtime[0] != '\0') {
@@ -388,7 +405,7 @@ void update_audio_texture(struct glwall_state *state) {
             }
             int fd = mkstemp(tmpl);
             if (fd >= 0) {
-                 
+
                 fchmod(fd, S_IRUSR | S_IWUSR);
                 debug_file = fdopen(fd, "w");
                 if (!debug_file) {
@@ -408,6 +425,7 @@ void update_audio_texture(struct glwall_state *state) {
     }
 
     float complex fft_data[GLWALL_FFT_SIZE];
+    float waveform_row[GLWALL_AUDIO_TEX_WIDTH] = {0};
     float rms_accum = 0.0f;
     float peak = 0.0f;
     for (int i = 0; i < GLWALL_FFT_SIZE; ++i) {
@@ -420,6 +438,15 @@ void update_audio_texture(struct glwall_state *state) {
         }
         rms_accum += sample * sample;
 
+        if (i < GLWALL_AUDIO_TEX_WIDTH) {
+            float normalized_wave = sample * 0.5f + 0.5f;
+            if (normalized_wave < 0.0f)
+                normalized_wave = 0.0f;
+            if (normalized_wave > 1.0f)
+                normalized_wave = 1.0f;
+            waveform_row[i] = normalized_wave;
+        }
+
         float window = 0.5f * (1.0f - cosf(2.0f * PI * i / (GLWALL_FFT_SIZE - 1)));
 
         fft_data[i] = sample * window;
@@ -430,11 +457,7 @@ void update_audio_texture(struct glwall_state *state) {
 
     fft(fft_data, GLWALL_FFT_SIZE);
 
-    const float smoothingTimeConstant = 0.8f;
-
-    static float smoothed_data[GLWALL_AUDIO_TEX_WIDTH] = {0};
-
-    float new_row[GLWALL_AUDIO_TEX_WIDTH];
+    float spectrum_row[GLWALL_AUDIO_TEX_WIDTH];
     for (int i = 0; i < GLWALL_AUDIO_TEX_WIDTH; ++i) {
         int bin_idx = i / 2;
         if (bin_idx >= GLWALL_FFT_SIZE / 2)
@@ -442,57 +465,27 @@ void update_audio_texture(struct glwall_state *state) {
 
         float mag = cabsf(fft_data[bin_idx]);
 
-        if (mag < 1e-6f) {
-            mag = 1e-6f;
-        }
+        float normalized = mag * 4.0f;
+        if (normalized > 1.0f)
+            normalized = 1.0f;
 
-        float db = 20.0f * log10f(mag);
-
-        const float minDecibels = -60.0f;
-        const float maxDecibels = 0.0f;
-
-        if (db < minDecibels)
-            db = minDecibels;
-        if (db > maxDecibels)
-            db = maxDecibels;
-
-        float normalized = (db - minDecibels) / (maxDecibels - minDecibels);
-
-        smoothed_data[i] =
-            smoothingTimeConstant * smoothed_data[i] + (1.0f - smoothingTimeConstant) * normalized;
-
-        new_row[i] = smoothed_data[i];
+        spectrum_row[i] = normalized;
     }
+
+    float audio_texture[GLWALL_AUDIO_TEX_WIDTH * GLWALL_AUDIO_TEX_HEIGHT];
+    memcpy(audio_texture + (size_t)GLWALL_AUDIO_TEX_ROW_WAVEFORM * GLWALL_AUDIO_TEX_WIDTH,
+           waveform_row, sizeof(waveform_row));
+    memcpy(audio_texture + (size_t)GLWALL_AUDIO_TEX_ROW_SPECTRUM * GLWALL_AUDIO_TEX_WIDTH,
+           spectrum_row, sizeof(spectrum_row));
 
     glBindTexture(GL_TEXTURE_2D, state->audio.texture);
 
-    static float *history_buffer = NULL;
-    if (width > GLWALL_AUDIO_TEX_WIDTH) {
-        LOG_WARN("Audio subsystem: tex_width (%d) exceeds GLWALL_AUDIO_TEX_WIDTH (%d) - clamping",
-                 width, GLWALL_AUDIO_TEX_WIDTH);
-        width = GLWALL_AUDIO_TEX_WIDTH;
-    }
-    if (height > GLWALL_AUDIO_TEX_HEIGHT) {
-        LOG_WARN("Audio subsystem: tex_height (%d) exceeds GLWALL_AUDIO_TEX_HEIGHT (%d) - clamping",
-                 height, GLWALL_AUDIO_TEX_HEIGHT);
-        height = GLWALL_AUDIO_TEX_HEIGHT;
+    if (width != GLWALL_AUDIO_TEX_WIDTH || height != GLWALL_AUDIO_TEX_HEIGHT) {
+        LOG_WARN("Audio subsystem: unexpected texture size (%dx%d), expected %dx%d", width, height,
+                 GLWALL_AUDIO_TEX_WIDTH, GLWALL_AUDIO_TEX_HEIGHT);
     }
 
-    if (!history_buffer) {
-        history_buffer = calloc((size_t)width * height, sizeof(float));
-        if (!history_buffer) {
-            LOG_ERROR("Memory allocation failed: insufficient memory for audio history buffer");
-            return;
-        }
-    }
-
-    if (height > 1) {
-        memmove(history_buffer + width, history_buffer, (size_t)width * (height - 1) * sizeof(float));
-    }
-
-    memcpy(history_buffer, new_row, (size_t)width * sizeof(float));
-
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_FLOAT, history_buffer);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_FLOAT, audio_texture);
 }
 
 void cleanup_audio(struct glwall_state *state) { glwall_audio_reset(state); }

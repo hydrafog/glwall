@@ -1,13 +1,14 @@
 #define _POSIX_C_SOURCE 200809L
+#include <assert.h>
 #include <time.h>
 
 #include "audio.h"
 #include "input.h"
 #include "opengl.h"
 #include "utils.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 static const char *vertex_shader_src = "#version 330 core\n"
                                        "const vec2 verts[4] = vec2[](vec2(-1.0, -1.0), vec2(1.0, "
@@ -71,9 +72,9 @@ static char *strip_version_directive(const char *source) {
 
     size_t before_len = version_line - source;
     size_t after_len = strlen(version_end);
-     
+
     if (before_len > SIZE_MAX - after_len - 1) {
-        LOG_ERROR("Memory allocation overflow prevented in strip_version_directive");
+        LOG_ERROR("%s", "Memory allocation overflow prevented in strip_version_directive");
         return NULL;
     }
     char *result = malloc(before_len + after_len + 1);
@@ -90,9 +91,9 @@ static char *strip_version_directive(const char *source) {
 static char *concat_preamble(const char *preamble, const char *source) {
     size_t plen = strlen(preamble);
     size_t slen = strlen(source);
-     
+
     if (plen > SIZE_MAX - slen - 1) {
-        LOG_ERROR("Memory allocation overflow prevented in concat_preamble");
+        LOG_ERROR("%s", "Memory allocation overflow prevented in concat_preamble");
         return NULL;
     }
     char *result = malloc(plen + slen + 1);
@@ -119,24 +120,27 @@ static GLuint compile_shader(struct glwall_state *state, GLenum type, const char
             char *info_log = malloc(log_len);
             if (info_log) {
                 glGetShaderInfoLog(shader, log_len, NULL, info_log);
-                LOG_ERROR("OpenGL subsystem error: shader compilation failed (details: %s)", info_log);
+                LOG_ERROR("OpenGL subsystem error: shader compilation failed (details: %s)",
+                          info_log);
                 free(info_log);
             } else {
-                LOG_ERROR("OpenGL subsystem error: shader compilation failed (memory allocation failed)");
+                LOG_ERROR(
+                    "%s",
+                    "OpenGL subsystem error: shader compilation failed (memory allocation failed)");
             }
         } else {
-            LOG_ERROR("OpenGL subsystem error: shader compilation failed (no log available)");
+            LOG_ERROR("%s", "OpenGL subsystem error: shader compilation failed (no log available)");
         }
         glDeleteShader(shader);
         return 0;
     }
-    LOG_DEBUG(state, "OpenGL subsystem: shader compilation completed successfully");
+    LOG_DEBUG(state, "%s", "OpenGL subsystem: shader compilation completed successfully");
     return shader;
 }
 
 static GLuint create_shader_program(struct glwall_state *state, const char *vert_src,
                                     const char *frag_src) {
-    LOG_DEBUG(state, "OpenGL subsystem: shader program creation initiated");
+    LOG_DEBUG(state, "%s", "OpenGL subsystem: shader program creation initiated");
     GLuint vert = compile_shader(state, GL_VERTEX_SHADER, vert_src);
     GLuint frag = compile_shader(state, GL_FRAGMENT_SHADER, frag_src);
     if (!vert || !frag)
@@ -162,27 +166,31 @@ static GLuint create_shader_program(struct glwall_state *state, const char *vert
         glDeleteProgram(program);
         return 0;
     }
-    LOG_DEBUG(state, "OpenGL subsystem: shader program creation completed successfully");
+    LOG_DEBUG(state, "%s", "OpenGL subsystem: shader program creation completed successfully");
     return program;
 }
 
 bool init_opengl(struct glwall_state *state) {
-    LOG_DEBUG(state, "OpenGL subsystem initialization commenced");
+    assert(state != NULL);
+    assert(state->outputs != NULL);
+
+    LOG_DEBUG(state, "%s", "OpenGL subsystem initialization commenced");
     struct glwall_output *first_output = state->outputs;
     if (!first_output)
         return false;
 
     if (!eglMakeCurrent(state->egl_display, first_output->egl_surface, first_output->egl_surface,
                         state->egl_context)) {
-        LOG_ERROR("EGL subsystem error: unable to set current EGL context");
+        LOG_ERROR("%s", "EGL subsystem error: unable to set current EGL context");
         return false;
     }
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
-        LOG_ERROR("OpenGL subsystem error: GLEW initialization failed");
+        LOG_ERROR("%s", "OpenGL subsystem error: GLEW initialization failed");
         return false;
     }
-    LOG_INFO("OpenGL subsystem: GLEW library initialized (version: %s)", glewGetString(GLEW_VERSION));
+    LOG_INFO("OpenGL subsystem: GLEW library initialized (version: %s)",
+             glewGetString(GLEW_VERSION));
 
     glGenVertexArrays(1, &state->vao);
     glBindVertexArray(state->vao);
@@ -215,7 +223,8 @@ bool init_opengl(struct glwall_state *state) {
     if (state->allow_vertex_shaders && state->vertex_shader_path) {
         char *raw_vert_src = read_file(state->vertex_shader_path);
         if (!raw_vert_src) {
-            LOG_ERROR("File operation failed: unable to read vertex shader '%s'", state->vertex_shader_path);
+            LOG_ERROR("File operation failed: unable to read vertex shader '%s'",
+                      state->vertex_shader_path);
             free(frag_src);
             return false;
         }
@@ -262,16 +271,16 @@ bool init_opengl(struct glwall_state *state) {
     state->loc_vertex_count = glGetUniformLocation(state->shader_program, "vertexCount");
 
     if (!init_audio(state)) {
-        LOG_WARN("Audio subsystem initialization failed, audio disabled");
+        LOG_WARN("%s", "Audio subsystem initialization failed, audio disabled");
         state->audio_enabled = false;
     }
 
-    LOG_DEBUG(state, "OpenGL subsystem initialization completed successfully");
+    LOG_DEBUG(state, "%s", "OpenGL subsystem initialization completed successfully");
     return true;
 }
 
 void cleanup_opengl(struct glwall_state *state) {
-    LOG_DEBUG(state, "OpenGL subsystem cleanup initiated");
+    LOG_DEBUG(state, "%s", "OpenGL subsystem cleanup initiated");
 
     cleanup_audio(state);
 
@@ -284,14 +293,17 @@ void cleanup_opengl(struct glwall_state *state) {
 }
 
 void render_frame(struct glwall_output *output) {
+    assert(output != NULL);
+    assert(output->state != NULL);
+
     struct glwall_state *state = output->state;
     if (!output->configured) {
         LOG_DEBUG(state, "Render cycle: skipping unconfigured output %u", output->output_name);
         return;
     }
 
-    LOG_DEBUG(state, "Render cycle: rendering output %u (dimensions: %u x %u)", output->output_name, output->width,
-              output->height);
+    LOG_DEBUG(state, "Render cycle: rendering output %u (dimensions: %u x %u)", output->output_name,
+              output->width_px, output->height_px);
 
     if (state->kernel_input_enabled) {
         poll_input_events(state);
@@ -302,7 +314,7 @@ void render_frame(struct glwall_output *output) {
 
     glBindVertexArray(state->vao);
 
-    glViewport(0, 0, output->width, output->height);
+    glViewport(0, 0, output->width_px, output->height_px);
 
     struct timespec current_time;
     clock_gettime(CLOCK_MONOTONIC, &current_time);
@@ -362,24 +374,22 @@ void render_frame(struct glwall_output *output) {
     }
 
     if (state->loc_resolution != -1) {
-        glUniform3f(state->loc_resolution, (float)output->width, (float)output->height, 1.0f);
+        glUniform3f(state->loc_resolution, (float)output->width_px, (float)output->height_px, 1.0f);
     }
 
     if (state->loc_resolution_vec2 != -1) {
-        glUniform2f(state->loc_resolution_vec2, (float)output->width, (float)output->height);
+        glUniform2f(state->loc_resolution_vec2, (float)output->width_px, (float)output->height_px);
     }
 
     if (state->loc_mouse != -1 || state->loc_mouse_vec2 != -1) {
         float mx = 0.0f, my = 0.0f, mz = 0.0f, mw = 0.0f;
-         
-         
-         
+
         if (state->kernel_input_enabled || state->pointer_output == output) {
             mx = (float)state->pointer_x;
-            my = (float)(output->height - 1) - (float)state->pointer_y;
+            my = (float)(output->height_px - 1) - (float)state->pointer_y;
             if (state->pointer_down) {
                 mz = (float)state->pointer_down_x;
-                mw = (float)(output->height - 1) - (float)state->pointer_down_y;
+                mw = (float)(output->height_px - 1) - (float)state->pointer_down_y;
             }
         }
         if (state->loc_mouse != -1) {
@@ -397,8 +407,8 @@ void render_frame(struct glwall_output *output) {
             glUniform1i(state->loc_sound, 0);
         }
         if (state->loc_sound_res != -1) {
-            glUniform2f(state->loc_sound_res, (float)state->audio.tex_width,
-                        (float)state->audio.tex_height);
+            glUniform2f(state->loc_sound_res, (float)state->audio.tex_width_px,
+                        (float)state->audio.tex_height_px);
         }
     }
 
@@ -406,8 +416,11 @@ void render_frame(struct glwall_output *output) {
         glUniform1f(state->loc_vertex_count, (float)state->vertex_count);
     }
 
-    LOG_DEBUG(state, "Render cycle: shader uniforms set (iTime: %.2f, iTimeDelta: %.4f, iFrame: %d, iResolution: %d x %d x 1.0)",
-              shader_time, time_delta, current_frame, output->width, output->height);
+    assert(output->width_px > 0 && output->height_px > 0);
+    LOG_DEBUG(state,
+              "Render cycle: shader uniforms set (iTime: %.2f, iTimeDelta: %.4f, iFrame: %d, "
+              "iResolution: %d x %d x 1.0)",
+              shader_time, time_delta, current_frame, output->width_px, output->height_px);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);

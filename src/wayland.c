@@ -1,6 +1,7 @@
 #include "wayland.h"
 #include "opengl.h"
 #include "utils.h"
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,7 +41,8 @@ static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer,
 static void frame_done(void *data, struct wl_callback *cb, uint32_t time) {
     UNUSED(time);
     struct glwall_output *output = data;
-    LOG_DEBUG(output->state, "Wayland event: frame_done callback invoked for output %u", output->output_name);
+    LOG_DEBUG(output->state, "Wayland event: frame_done callback invoked for output %u",
+              output->output_name);
     wl_callback_destroy(cb);
     render_frame(output);
 }
@@ -53,27 +55,32 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
                                     uint32_t serial, uint32_t w, uint32_t h) {
     struct glwall_output *output = data;
     struct glwall_state *state = output->state;
-    LOG_DEBUG(state, "Wayland event: layer_surface_configure for output %u (serial: %u, dimensions: %u x %u)",
-              output->output_name, serial, w, h);
+    LOG_DEBUG(
+        state,
+        "Wayland event: layer_surface_configure for output %u (serial: %u, dimensions: %u x %u)",
+        output->output_name, serial, w, h);
 
     if (surface == output->layer_surface) {
 
-        output->width = w;
-        output->height = h;
+        output->width_px = w;
+        output->height_px = h;
         output->configured = true;
 
         if (output->wl_egl_window) {
-            LOG_DEBUG(state, "EGL subsystem: EGL window resize operation initiated for output %u", output->output_name);
+            LOG_DEBUG(state, "EGL subsystem: EGL window resize operation initiated for output %u",
+                      output->output_name);
             wl_egl_window_resize(output->wl_egl_window, w, h, 0, 0);
         }
 
         zwlr_layer_surface_v1_ack_configure(surface, serial);
-        LOG_DEBUG(state, "Wayland protocol: configure acknowledgment sent for output %u", output->output_name);
+        LOG_DEBUG(state, "Wayland protocol: configure acknowledgment sent for output %u",
+                  output->output_name);
 
         if (state->shader_program != 0) {
-            LOG_DEBUG(state,
-                      "Render cycle: re-render triggered for output %u (OpenGL ready, configure event)",
-                      output->output_name);
+            LOG_DEBUG(
+                state,
+                "Render cycle: re-render triggered for output %u (OpenGL ready, configure event)",
+                output->output_name);
             render_frame(output);
         }
     } else if (surface == output->overlay_layer_surface) {
@@ -89,7 +96,7 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
             return;
 
         if (state->mouse_overlay_mode == GLWALL_MOUSE_OVERLAY_EDGE) {
-            int edge_h = state->mouse_overlay_edge_height;
+            int edge_h = state->mouse_overlay_edge_height_px;
             if (edge_h > 0) {
 
                 int y = (int)h - edge_h;
@@ -113,7 +120,8 @@ static void layer_surface_configure(void *data, struct zwlr_layer_surface_v1 *su
 static void layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface) {
     UNUSED(surface);
     struct glwall_output *output = data;
-    LOG_DEBUG(output->state, "Wayland event: layer_surface_closed callback invoked for output %u", output->output_name);
+    LOG_DEBUG(output->state, "Wayland event: layer_surface_closed callback invoked for output %u",
+              output->output_name);
     output->state->running = false;
 }
 
@@ -143,17 +151,19 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
                                    const char *interface, uint32_t version) {
     UNUSED(version);
     struct glwall_state *state = data;
-    LOG_DEBUG(state, "Wayland event: registry_handle_global callback invoked (name: %u, interface: %s, version: %u)", name,
-              interface, version);
+    LOG_DEBUG(state,
+              "Wayland event: registry_handle_global callback invoked (name: %u, interface: %s, "
+              "version: %u)",
+              name, interface, version);
 
     if (strcmp(interface, wl_compositor_interface.name) == 0) {
-        LOG_DEBUG(state, "Wayland protocol: binding wl_compositor");
+        LOG_DEBUG(state, "%s", "Wayland protocol: binding wl_compositor");
         state->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     } else if (strcmp(interface, wl_seat_interface.name) == 0) {
         LOG_DEBUG(state, "Wayland protocol: binding wl_seat (name: %u)", name);
         state->seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
         if (!state->seat) {
-            LOG_ERROR("Wayland protocol error: unable to bind wl_seat");
+            LOG_ERROR("%s", "Wayland protocol error: unable to bind wl_seat");
             return;
         }
         wl_seat_add_listener(state->seat, &seat_listener, state);
@@ -170,7 +180,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
         LOG_DEBUG(state, "Wayland protocol: binding wl_output (name: %u)", name);
         struct glwall_output *output = calloc(1, sizeof(struct glwall_output));
         if (!output) {
-            LOG_ERROR("Memory allocation failed: insufficient memory for output structure");
+            LOG_ERROR("%s", "Memory allocation failed: insufficient memory for output structure");
             return;
         }
         output->state = state;
@@ -199,12 +209,13 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
     UNUSED(seat);
 
     bool has_pointer = caps & WL_SEAT_CAPABILITY_POINTER;
-    LOG_DEBUG(state, "Wayland event: seat capabilities changed (pointer: %s)", has_pointer ? "enabled" : "disabled");
+    LOG_DEBUG(state, "Wayland event: seat capabilities changed (pointer: %s)",
+              has_pointer ? "enabled" : "disabled");
 
     if (has_pointer && !state->pointer) {
         state->pointer = wl_seat_get_pointer(state->seat);
         if (!state->pointer) {
-            LOG_ERROR("Wayland protocol error: unable to obtain wl_pointer from seat");
+            LOG_ERROR("%s", "Wayland protocol error: unable to obtain wl_pointer from seat");
             return;
         }
         wl_pointer_add_listener(state->pointer, &pointer_listener, state);
@@ -212,12 +223,12 @@ static void seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t 
         state->pointer_x = state->pointer_y = 0.0;
         state->pointer_down = false;
         state->pointer_down_x = state->pointer_down_y = 0.0;
-        LOG_DEBUG(state, "Input subsystem: wl_pointer created for seat");
+        LOG_DEBUG(state, "%s", "Input subsystem: wl_pointer created for seat");
     } else if (!has_pointer && state->pointer) {
         wl_pointer_destroy(state->pointer);
         state->pointer = NULL;
         state->pointer_output = NULL;
-        LOG_DEBUG(state, "Input subsystem: wl_pointer destroyed (capability removed)");
+        LOG_DEBUG(state, "%s", "Input subsystem: wl_pointer destroyed (capability removed)");
     }
 }
 
@@ -250,7 +261,7 @@ static void pointer_handle_enter(void *data, struct wl_pointer *pointer, uint32_
         LOG_DEBUG(state, "Input event: pointer_enter on output %u (position: %.1f, %.1f)",
                   state->pointer_output->output_name, state->pointer_x, state->pointer_y);
     } else {
-        LOG_DEBUG(state, "Input event: pointer_enter on unknown surface");
+        LOG_DEBUG(state, "%s", "Input event: pointer_enter on unknown surface");
     }
 }
 
@@ -261,7 +272,7 @@ static void pointer_handle_leave(void *data, struct wl_pointer *pointer, uint32_
     struct glwall_state *state = data;
     UNUSED(surface);
 
-    LOG_DEBUG(state, "Input event: pointer_leave callback invoked");
+    LOG_DEBUG(state, "%s", "Input event: pointer_leave callback invoked");
     state->pointer_output = NULL;
 }
 
@@ -287,11 +298,11 @@ static void pointer_handle_button(void *data, struct wl_pointer *pointer, uint32
         state->pointer_down = true;
         state->pointer_down_x = state->pointer_x;
         state->pointer_down_y = state->pointer_y;
-        LOG_DEBUG(state, "Input event: pointer_button press (position: %.1f, %.1f)", state->pointer_down_x,
-                  state->pointer_down_y);
+        LOG_DEBUG(state, "Input event: pointer_button press (position: %.1f, %.1f)",
+                  state->pointer_down_x, state->pointer_down_y);
     } else if (button_state == WL_POINTER_BUTTON_STATE_RELEASED) {
         state->pointer_down = false;
-        LOG_DEBUG(state, "Input event: pointer_button release callback invoked");
+        LOG_DEBUG(state, "%s", "Input event: pointer_button release callback invoked");
     }
 }
 
@@ -333,9 +344,11 @@ static void pointer_handle_axis_discrete(void *data, struct wl_pointer *pointer,
 }
 
 bool init_wayland(struct glwall_state *state) {
+    assert(state != NULL);
+
     state->display = wl_display_connect(NULL);
     if (!state->display) {
-        LOG_ERROR("Wayland subsystem error: unable to connect to Wayland display");
+        LOG_ERROR("%s", "Wayland subsystem error: unable to connect to Wayland display");
         return false;
     }
     state->registry = wl_display_get_registry(state->display);
@@ -344,15 +357,18 @@ bool init_wayland(struct glwall_state *state) {
     wl_display_roundtrip(state->display);
 
     if (!state->compositor || !state->layer_shell) {
-        LOG_ERROR("Wayland subsystem error: required components unavailable (wl_compositor or wlr_layer_shell)");
+        LOG_ERROR("%s", "Wayland subsystem error: required components unavailable (wl_compositor "
+                        "or wlr_layer_shell)");
         return false;
     }
     return true;
 }
 
 void create_layer_surfaces(struct glwall_state *state) {
+    assert(state != NULL);
+
     if (!state->outputs) {
-        LOG_ERROR("Display subsystem error: no Wayland outputs detected");
+        LOG_ERROR("%s", "Display subsystem error: no Wayland outputs detected");
         state->running = false;
         return;
     }
@@ -367,7 +383,8 @@ void create_layer_surfaces(struct glwall_state *state) {
 
         output->wl_egl_window = wl_egl_window_create(output->wl_surface, 1, 1);
         if (!output->wl_egl_window) {
-            LOG_ERROR("EGL subsystem error: unable to create EGL window for output %u", output->output_name);
+            LOG_ERROR("EGL subsystem error: unable to create EGL window for output %u",
+                      output->output_name);
 
             return;
         }
@@ -384,15 +401,17 @@ void create_layer_surfaces(struct glwall_state *state) {
         if (state->mouse_overlay_mode != GLWALL_MOUSE_OVERLAY_NONE) {
             output->overlay_surface = wl_compositor_create_surface(state->compositor);
             if (!output->overlay_surface) {
-                LOG_ERROR("Display subsystem error: unable to create overlay surface for output %u", output->output_name);
+                LOG_ERROR("Display subsystem error: unable to create overlay surface for output %u",
+                          output->output_name);
                 return;
             }
             output->overlay_layer_surface = zwlr_layer_shell_v1_get_layer_surface(
                 state->layer_shell, output->overlay_surface, output->wl_output,
                 ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "glwall-mouse-overlay");
             if (!output->overlay_layer_surface) {
-                LOG_ERROR("Display subsystem error: unable to create overlay layer surface for output %u",
-                          output->output_name);
+                LOG_ERROR(
+                    "Display subsystem error: unable to create overlay layer surface for output %u",
+                    output->output_name);
                 return;
             }
 
@@ -413,7 +432,7 @@ void create_layer_surfaces(struct glwall_state *state) {
 }
 
 void start_rendering(struct glwall_state *state) {
-    LOG_INFO("Render cycle: initialization complete, rendering commenced");
+    LOG_INFO("%s", "Render cycle: initialization complete, rendering commenced");
     for (struct glwall_output *output = state->outputs; output; output = output->next) {
         if (output->configured) {
 

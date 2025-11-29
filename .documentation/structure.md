@@ -15,9 +15,7 @@ The codebase follows a flat C structure in `src/` with separation of concerns by
 glwall/
 ├── .documentation/     # Context Knowledge Graph.
 ├── scripts/            # Helper scripts.
-│   ├── list-audio-sources.sh # List PulseAudio sources.
-│   ├── remove_comments.py    # Documentation maintenance.
-│   └── test-local.sh         # Local testing helper.
+│   └── remove_comments.py    # Documentation maintenance.
 ├── shaders/            # Example GLSL shaders.
 ├── src/                # Source code.
 │   ├── main.c          # Entry point and loop.
