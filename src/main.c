@@ -1,13 +1,3 @@
-/**
- * @file main.c
- * @brief Main entry point for GLWall
- *
- * This file contains the main() function and event loop for GLWall.
- * It initializes all subsystems (Wayland, EGL, OpenGL), starts the
- * rendering loop, and handles cleanup on exit.
- */
-
-// This feature test macro is required to expose clock_gettime().
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdlib.h>
@@ -20,89 +10,72 @@
 #include "utils.h"
 #include "wayland.h"
 
-// Private Function Declarations
-
 static void run_main_loop(struct glwall_state *state);
 
-// Public Function Implementations
-
-/**
- * @brief Main event loop
- *
- * Records the start time and enters the Wayland event dispatch loop.
- * Rendering is driven by frame callbacks, so this loop simply waits
- * for and dispatches Wayland events.
- *
- * @param state Pointer to global application state
- */
 static void run_main_loop(struct glwall_state *state) {
-    LOG_INFO("Starting render loop...");
+    LOG_INFO("Render loop started");
 
-    // The main loop simply dispatches Wayland events. Rendering is driven
-    // by the frame callback requests. wl_display_dispatch() blocks until
-    // an event is received.
     while (state->running && wl_display_dispatch(state->display) != -1) {
-        // Intentionally empty.
     }
 }
 
-/**
- * @brief Main entry point
- *
- * Parses command-line options, initializes all subsystems, starts rendering,
- * runs the event loop, and cleans up on exit.
- *
- * @param argc Argument count
- * @param argv Argument vector
- * @return EXIT_SUCCESS on normal exit
- */
 int main(int argc, char *argv[]) {
     struct glwall_state state = {0};
+    LOG_DEBUG(&state, "Application initialization started (argc: %d)", argc);
 
-    // Default configuration
     state.running = true;
     state.power_mode = GLWALL_POWER_MODE_FULL;
     state.mouse_overlay_mode = GLWALL_MOUSE_OVERLAY_NONE;
-    state.mouse_overlay_edge_height = 32; // 32px edge strip by default when enabled
+    state.mouse_overlay_edge_height = 32;
     state.audio_enabled = false;
     state.audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
     state.audio_device_name = NULL;
     state.allow_vertex_shaders = false;
     state.vertex_shader_path = NULL;
-    state.vertex_count = 262144;        // 512x512 points by default for vertex shaders
-    state.vertex_draw_mode = GL_POINTS; // Default to points
+    state.vertex_count = 262144;
+    state.vertex_draw_mode = GL_POINTS;
     state.kernel_input_enabled = false;
     state.input_impl = NULL;
 
     parse_options(argc, argv, &state);
+    LOG_DEBUG(&state, "Configuration parsing completed");
 
     if (!init_wayland(&state))
         goto cleanup;
+    LOG_DEBUG(&state, "Wayland subsystem initialization succeeded");
     create_layer_surfaces(&state);
+    LOG_DEBUG(&state, "Layer surfaces created");
     if (!state.running)
         goto cleanup;
 
     if (!init_egl(&state))
         goto cleanup;
+    LOG_DEBUG(&state, "EGL subsystem initialization succeeded");
     if (!init_opengl(&state))
         goto cleanup;
+    LOG_DEBUG(&state, "OpenGL subsystem initialization succeeded");
 
-    // Initialize kernel input if requested (optional, will log warnings on failure)
     if (state.kernel_input_enabled) {
         init_input(&state);
+        LOG_DEBUG(&state, "Input subsystem initialization completed");
     }
 
-    // Initialize start time BEFORE rendering begins
     clock_gettime(CLOCK_MONOTONIC, &state.start_time);
+    LOG_DEBUG(&state, "Frame timer initialized");
 
     start_rendering(&state);
     run_main_loop(&state);
 
 cleanup:
-    LOG_INFO("Cleaning up and exiting...");
+    LOG_INFO("Application shutdown initiated");
+    LOG_DEBUG(&state, "Cleanup sequence: terminating input subsystem");
     cleanup_input(&state);
+    LOG_DEBUG(&state, "Cleanup sequence: terminating OpenGL subsystem");
     cleanup_opengl(&state);
+    LOG_DEBUG(&state, "Cleanup sequence: terminating EGL subsystem");
     cleanup_egl(&state);
+    LOG_DEBUG(&state, "Cleanup sequence: terminating Wayland subsystem");
     cleanup_wayland(&state);
+    LOG_DEBUG(&state, "Application shutdown completed");
     return EXIT_SUCCESS;
 }

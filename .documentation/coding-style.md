@@ -24,21 +24,8 @@
     if (buffer_size > MAX_BUFFER_SIZE) ...
     ```
 *   **Comments & Documentation:**
-    *   **Style:** Use Doxygen-style comments (`/** ... */`) for all public APIs.
-    *   **File Headers:** Every `.c` and `.h` file must start with a `@file` block containing a `@brief` description and copyright/license info.
-    *   **Functions:** All functions must be documented.
-        *   `@brief`: What the function does.
-        *   `@param`: Description of inputs (include units, e.g., `[ms]`).
-        *   `@return`: Return values and specific error codes.
-        *   `@note`: Thread-safety, blocking behavior, or allocation warnings.
-    *   **Implementation Comments:** Use `//` for internal logic. Place comments **before** the code they explain. Avoid trailing inline comments (e.g., `int x = 1; // bad`) unless strictly necessary. Explain **why**, not *what*.
-        *   *Bad:* `i++; // Increment i`
-        *   *Good:*
-            ```c
-            // Skip the header byte to process payload
-            i++;
-            ```
-    *   **TODOs:** Use `// TODO(username): description` so we know who to ask about it later.
+    *   **No Comments:** Do not use comments in the code. The code should be self-explanatory. If logic is complex, refactor it to be clearer.
+    *   **Documentation:** Documentation should live in separate markdown files, not in the source code.
 
 -----
 

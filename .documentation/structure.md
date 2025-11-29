@@ -15,6 +15,9 @@ The codebase follows a flat C structure in `src/` with separation of concerns by
 glwall/
 ├── .documentation/     # Context Knowledge Graph.
 ├── scripts/            # Helper scripts.
+│   ├── list-audio-sources.sh # List PulseAudio sources.
+│   ├── remove_comments.py    # Documentation maintenance.
+│   └── test-local.sh         # Local testing helper.
 ├── shaders/            # Example GLSL shaders.
 ├── src/                # Source code.
 │   ├── main.c          # Entry point and loop.
@@ -25,7 +28,6 @@ glwall/
 │   ├── input.c         # Input handling (libevdev).
 │   ├── utils.c         # File I/O and helpers.
 │   └── *.h             # Header files.
-├── tests/              # Test suite.
 ├── flake.nix           # Nix build definition.
 └── Makefile            # Manual build definition.
 ```

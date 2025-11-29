@@ -49,9 +49,18 @@ graph TD
 *   Performs FFT (Fast Fourier Transform) to generate frequency data.
 *   Writes to a shared ring buffer that the render thread reads from to update the audio texture.
 
+### 2.5. Input (`input.c`)
+*   **Kernel Input**: Uses `libevdev` to read directly from `/dev/input/event*` devices.
+*   **Device Discovery**: Scans for pointer devices, prioritizing relative mice over touchpads.
+*   **Hyprland IPC**: Connects to Hyprland's IPC socket to fetch cursor position (if available).
+*   **Integration**: Updates `state->pointer_x` and `state->pointer_y` independently of Wayland focus.
+
 ## 3. Data Flow
 
-1.  **Input**: Mouse events (Wayland) or Audio data (PulseAudio) update the global `glwall_state`.
+1.  **Input**: 
+    *   **Wayland**: Mouse events when surface has focus.
+    *   **Kernel/IPC**: Global mouse tracking when `--kernel-input` is enabled.
+    *   **Audio**: PulseAudio data processed via FFT.
 2.  **Update**: On frame callback, the render loop reads the current state.
 3.  **Render**: Uniforms are uploaded to the GPU.
 4.  **Display**: `eglSwapBuffers` presents the new frame to the compositor.

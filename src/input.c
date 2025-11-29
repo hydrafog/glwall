@@ -1,12 +1,3 @@
-/**
- * @file input.c
- * @brief Kernel-level input device monitoring using libevdev
- *
- * Directly reads mouse/pointer events from /dev/input/event* devices,
- * bypassing Wayland compositor input restrictions. This allows the wallpaper
- * to track mouse position even when behind other windows.
- */
-
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -17,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include "input.h"
 #include "utils.h"
@@ -26,56 +19,67 @@
 #define GLWALL_DEFAULT_SCREEN_WIDTH 1920
 #define GLWALL_DEFAULT_SCREEN_HEIGHT 1080
 
-// Private input state stored in glwall_state
 struct input_device {
     int fd;
     struct libevdev *dev;
-    bool is_absolute; // true for touchpads/tablets, false for mice
+    bool is_absolute;
 };
 
 struct input_state {
     struct input_device devices[MAX_INPUT_DEVICES];
     int device_count;
-    int screen_width; // For normalizing absolute coordinates
+    int screen_width;
     int screen_height;
+    bool use_hyprland_ipc;
+    char hyprland_socket_path[256];
 };
 
-/**
- * @brief Check if device has pointer capabilities
- *
- * Tests whether the given libevdev device supports relative or absolute
- * pointer input (mouse, touchpad, touchscreen, etc.).
- *
- * @param dev libevdev device to check
- * @return true if device supports pointer input, false otherwise
- */
+static bool is_absolute_pointer(struct libevdev *dev) {
+    return libevdev_has_event_code(dev, EV_ABS, ABS_X) &&
+           libevdev_has_event_code(dev, EV_ABS, ABS_Y);
+}
+
+static bool is_relative_pointer(struct libevdev *dev) {
+    return libevdev_has_event_code(dev, EV_REL, REL_X) &&
+           libevdev_has_event_code(dev, EV_REL, REL_Y);
+}
+
 static bool is_pointer_device(struct libevdev *dev) {
-    // Check for relative pointer (mouse)
-    if (libevdev_has_event_code(dev, EV_REL, REL_X) &&
-        libevdev_has_event_code(dev, EV_REL, REL_Y)) {
-        return true;
-    }
+    return is_absolute_pointer(dev) || is_relative_pointer(dev);
+}
 
-    // Check for absolute pointer (touchpad/tablet/touchscreen)
-    if (libevdev_has_event_code(dev, EV_ABS, ABS_X) &&
-        libevdev_has_event_code(dev, EV_ABS, ABS_Y)) {
-        return true;
+ 
+static bool has_relative_device_for_hardware(struct input_state *input, struct libevdev *dev) {
+    int vid = libevdev_get_id_vendor(dev);
+    int pid = libevdev_get_id_product(dev);
+    
+    for (int i = 0; i < input->device_count; i++) {
+        struct libevdev *existing = input->devices[i].dev;
+        if (!input->devices[i].is_absolute &&
+            libevdev_get_id_vendor(existing) == vid &&
+            libevdev_get_id_product(existing) == pid) {
+            return true;
+        }
     }
-
     return false;
 }
 
-/**
- * @brief Try to open and add a single input device
- *
- * Attempts to open an input device file, initializes libevdev for it,
- * checks if it's a pointer device, and adds it to the input state's
- * device array if successful.
- *
- * @param input Pointer to input state structure
- * @param device_path Path to device file (e.g., "/dev/input/event0")
- * @return true if device was successfully added, false otherwise
- */
+ 
+static bool has_absolute_device_for_hardware(struct input_state *input, struct libevdev *dev) {
+    int vid = libevdev_get_id_vendor(dev);
+    int pid = libevdev_get_id_product(dev);
+    
+    for (int i = 0; i < input->device_count; i++) {
+        struct libevdev *existing = input->devices[i].dev;
+        if (input->devices[i].is_absolute &&
+            libevdev_get_id_vendor(existing) == vid &&
+            libevdev_get_id_product(existing) == pid) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool try_add_device(struct input_state *input, const char *device_path) {
     if (input->device_count >= MAX_INPUT_DEVICES) {
         return false;
@@ -83,7 +87,7 @@ static bool try_add_device(struct input_state *input, const char *device_path) {
 
     int fd = open(device_path, O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
-        return false; // Silently skip inaccessible devices
+        return false;
     }
 
     struct libevdev *dev = NULL;
@@ -93,14 +97,20 @@ static bool try_add_device(struct input_state *input, const char *device_path) {
         return false;
     }
 
-    // Only add pointer devices
     if (!is_pointer_device(dev)) {
         libevdev_free(dev);
         close(fd);
         return false;
     }
 
-    bool is_abs = libevdev_has_event_code(dev, EV_ABS, ABS_X);
+    bool is_abs = is_absolute_pointer(dev);
+    
+     
+    if (!is_abs && has_absolute_device_for_hardware(input, dev)) {
+        libevdev_free(dev);
+        close(fd);
+        return false;
+    }
 
     input->devices[input->device_count].fd = fd;
     input->devices[input->device_count].dev = dev;
@@ -110,30 +120,84 @@ static bool try_add_device(struct input_state *input, const char *device_path) {
     return true;
 }
 
-/**
- * @brief Initializes kernel input device monitoring
- *
- * Scans /dev/input for event devices, identifies pointer devices using
- * libevdev, and sets up monitoring for them. Updates state->pointer_x/y
- * directly from kernel input events.
- *
- * @param state Pointer to global application state
- * @return true on success, false on failure (will log appropriate messages)
- *
- * @note This function requires read access to /dev/input/event* devices,
- *       typically available to members of the 'input' group.
- */
-bool init_input(struct glwall_state *state) {
-    LOG_DEBUG(state, "Initializing kernel input device monitoring...");
+ 
+static bool query_hyprland_cursor(struct input_state *input, double *x, double *y) {
+    if (!input->use_hyprland_ipc) {
+        return false;
+    }
+    
+    int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, input->hyprland_socket_path, sizeof(addr.sun_path) - 1);
+    
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(sock);
+        return false;
+    }
+    
+     
+    const char *cmd = "cursorpos";
+    if (write(sock, cmd, strlen(cmd)) < 0) {
+        close(sock);
+        return false;
+    }
+    
+     
+    char buf[64];
+    ssize_t n = read(sock, buf, sizeof(buf) - 1);
+    close(sock);
+    
+    if (n <= 0) {
+        return false;
+    }
+    buf[n] = '\0';
+    
+     
+    if (sscanf(buf, "%lf, %lf", x, y) != 2) {
+        return false;
+    }
+    
+    return true;
+}
 
-    // Allocate input state
+ 
+static bool init_hyprland_ipc(struct input_state *input) {
+    const char *his = getenv("HYPRLAND_INSTANCE_SIGNATURE");
+    const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
+    
+    if (!his || !xdg_runtime) {
+        return false;
+    }
+    
+    snprintf(input->hyprland_socket_path, sizeof(input->hyprland_socket_path),
+             "%s/hypr/%s/.socket.sock", xdg_runtime, his);
+    
+     
+    double x, y;
+    input->use_hyprland_ipc = true;
+    if (!query_hyprland_cursor(input, &x, &y)) {
+        input->use_hyprland_ipc = false;
+        return false;
+    }
+    
+    return true;
+}
+
+bool init_input(struct glwall_state *state) {
+    LOG_DEBUG(state, "Input subsystem: kernel input device monitoring initialization commenced");
+
     struct input_state *input = calloc(1, sizeof(struct input_state));
     if (!input) {
-        LOG_ERROR("Failed to allocate input state");
+        LOG_ERROR("Memory allocation failed: insufficient memory for input state");
         return false;
     }
 
-    // Get screen dimensions from first output
     if (state->outputs) {
         input->screen_width = state->outputs->width;
         input->screen_height = state->outputs->height;
@@ -142,74 +206,143 @@ bool init_input(struct glwall_state *state) {
         input->screen_height = GLWALL_DEFAULT_SCREEN_HEIGHT;
     }
 
-    // Scan /dev/input for event devices
+     
+    if (init_hyprland_ipc(input)) {
+        LOG_INFO("Input subsystem: Hyprland IPC initialized for cursor tracking");
+        state->input_impl = input;
+        
+         
+        double x, y;
+        if (query_hyprland_cursor(input, &x, &y)) {
+            state->pointer_x = x;
+            state->pointer_y = y;
+        }
+        return true;
+    }
+
+     
     DIR *dir = opendir(INPUT_DEVICE_PATH);
     if (!dir) {
-        LOG_WARN("Cannot open %s: %s (kernel input will not work)", INPUT_DEVICE_PATH,
+        LOG_WARN("Input subsystem warning: unable to access %s (errno: %s) - kernel input disabled", INPUT_DEVICE_PATH,
                  strerror(errno));
         free(input);
         return false;
     }
 
+     
+    
+     
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Look for eventX devices
         if (strncmp(entry->d_name, "event", 5) != 0) {
             continue;
         }
 
         char device_path[PATH_MAX];
-        int ret =
-            snprintf(device_path, sizeof(device_path), "%s/%s", INPUT_DEVICE_PATH, entry->d_name);
+        int ret = snprintf(device_path, sizeof(device_path), "%s/%s", INPUT_DEVICE_PATH, entry->d_name);
         if (ret < 0 || ret >= (int)sizeof(device_path)) {
-            LOG_WARN("Device path too long for %s", entry->d_name);
             continue;
         }
 
-        if (try_add_device(input, device_path)) {
-            const char *name = libevdev_get_name(input->devices[input->device_count - 1].dev);
-            LOG_INFO("Found pointer device: %s (%s)", entry->d_name, name);
+        int fd = open(device_path, O_RDONLY | O_NONBLOCK);
+        if (fd < 0) continue;
+        
+        struct libevdev *dev = NULL;
+        if (libevdev_new_from_fd(fd, &dev) < 0) {
+            close(fd);
+            continue;
+        }
+        
+        if (is_relative_pointer(dev) && input->device_count < MAX_INPUT_DEVICES) {
+            input->devices[input->device_count].fd = fd;
+            input->devices[input->device_count].dev = dev;
+            input->devices[input->device_count].is_absolute = false;
+            input->device_count++;
+            LOG_INFO("Input subsystem: relative pointer device detected (%s: %s)", 
+                     entry->d_name, libevdev_get_name(dev));
+        } else {
+            libevdev_free(dev);
+            close(fd);
+        }
+    }
+    
+     
+    rewinddir(dir);
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "event", 5) != 0) {
+            continue;
+        }
+
+        char device_path[PATH_MAX];
+        int ret = snprintf(device_path, sizeof(device_path), "%s/%s", INPUT_DEVICE_PATH, entry->d_name);
+        if (ret < 0 || ret >= (int)sizeof(device_path)) {
+            continue;
+        }
+
+        int fd = open(device_path, O_RDONLY | O_NONBLOCK);
+        if (fd < 0) continue;
+        
+        struct libevdev *dev = NULL;
+        if (libevdev_new_from_fd(fd, &dev) < 0) {
+            close(fd);
+            continue;
+        }
+        
+         
+        if (is_absolute_pointer(dev) && !is_relative_pointer(dev) && 
+            !has_relative_device_for_hardware(input, dev) &&
+            input->device_count < MAX_INPUT_DEVICES) {
+            input->devices[input->device_count].fd = fd;
+            input->devices[input->device_count].dev = dev;
+            input->devices[input->device_count].is_absolute = true;
+            input->device_count++;
+            LOG_INFO("Input subsystem: absolute pointer device detected (%s: %s)", 
+                     entry->d_name, libevdev_get_name(dev));
+        } else {
+            libevdev_free(dev);
+            close(fd);
         }
     }
     closedir(dir);
 
     if (input->device_count == 0) {
-        LOG_WARN("No accessible pointer devices found in %s", INPUT_DEVICE_PATH);
-        LOG_WARN("Kernel input capture requires read access (add user to 'input' group)");
+        LOG_WARN("Input subsystem warning: no accessible pointer devices found in %s", INPUT_DEVICE_PATH);
+        LOG_WARN("Input subsystem warning: permission denied - kernel input requires read access to input devices (add user to 'input' group)");
         free(input);
         return false;
     }
 
-    LOG_INFO("Kernel input initialized with %d pointer device(s)", input->device_count);
+    LOG_INFO("Input subsystem initialization: kernel input enabled with %d pointer device(s)", input->device_count);
 
-    // Store in state (using audio.impl as a template for opaque storage)
-    // We'll add a proper field to state.h
     state->input_impl = input;
+    
+     
+    state->pointer_x = input->screen_width / 2.0;
+    state->pointer_y = input->screen_height / 2.0;
 
     return true;
 }
 
-/**
- * @brief Polls for kernel input events
- *
- * Performs non-blocking reads from all monitored input devices. Updates
- * state->pointer_x, state->pointer_y, and state->pointer_down based on
- * kernel input events. Should be called regularly (e.g., before each
- * render frame) to ensure responsive input handling.
- *
- * @param state Pointer to global application state
- *
- * @note This function is a no-op if state->input_impl is NULL.
- */
 void poll_input_events(struct glwall_state *state) {
     if (!state->input_impl) {
         return;
     }
 
     struct input_state *input = (struct input_state *)state->input_impl;
+    
+     
+    if (input->use_hyprland_ipc) {
+        double x, y;
+        if (query_hyprland_cursor(input, &x, &y)) {
+            state->pointer_x = x;
+            state->pointer_y = y;
+        }
+        return;
+    }
+    
+     
     struct input_event ev;
 
-    // Poll all devices
     for (int i = 0; i < input->device_count; i++) {
         struct input_device *device = &input->devices[i];
 
@@ -217,24 +350,23 @@ void poll_input_events(struct glwall_state *state) {
             int rc = libevdev_next_event(device->dev, LIBEVDEV_READ_FLAG_NORMAL, &ev);
 
             if (rc == -EAGAIN) {
-                break; // No more events for this device
+                break;
             }
 
             if (rc < 0) {
-                continue; // Error, skip
+                continue;
             }
 
-            // Process pointer motion events
             if (ev.type == EV_REL) {
                 if (ev.code == REL_X) {
                     state->pointer_x += ev.value;
-                    // Clamp to screen bounds
+
                     if (state->pointer_x < 0)
                         state->pointer_x = 0;
                     if (state->pointer_x >= input->screen_width) {
                         state->pointer_x = input->screen_width - 1;
                     }
-                    LOG_DEBUG(state, "Input REL_X: %d -> %.1f", ev.value, state->pointer_x);
+                    LOG_DEBUG(state, "Input event: REL_X motion detected (delta: %d, position: %.1f)", ev.value, state->pointer_x);
                 } else if (ev.code == REL_Y) {
                     state->pointer_y += ev.value;
                     if (state->pointer_y < 0)
@@ -244,34 +376,42 @@ void poll_input_events(struct glwall_state *state) {
                     }
                 }
             } else if (ev.type == EV_ABS && device->is_absolute) {
-                // Absolute coordinates (touchpad, tablet)
+
                 const struct input_absinfo *abs_info;
 
                 if (ev.code == ABS_X) {
                     abs_info = libevdev_get_abs_info(device->dev, ABS_X);
                     if (abs_info) {
-                        // Normalize to screen coordinates
-                        double norm = (double)(ev.value - abs_info->minimum) /
-                                      (abs_info->maximum - abs_info->minimum);
-                        state->pointer_x = norm * input->screen_width;
+
+                        double denom = (double)(abs_info->maximum - abs_info->minimum);
+                        if (denom <= 0.0) {
+                            LOG_WARN("Input subsystem: invalid abs range (max == min) for ABS_X");
+                        } else {
+                            double norm = (double)(ev.value - abs_info->minimum) / denom;
+                            state->pointer_x = norm * input->screen_width;
+                        }
                     }
                 } else if (ev.code == ABS_Y) {
                     abs_info = libevdev_get_abs_info(device->dev, ABS_Y);
                     if (abs_info) {
-                        double norm = (double)(ev.value - abs_info->minimum) /
-                                      (abs_info->maximum - abs_info->minimum);
-                        state->pointer_y = norm * input->screen_height;
+                        double denom = (double)(abs_info->maximum - abs_info->minimum);
+                        if (denom <= 0.0) {
+                            LOG_WARN("Input subsystem: invalid abs range (max == min) for ABS_Y");
+                        } else {
+                            double norm = (double)(ev.value - abs_info->minimum) / denom;
+                            state->pointer_y = norm * input->screen_height;
+                        }
                     }
                 }
             } else if (ev.type == EV_KEY) {
-                // Mouse button events
+
                 if (ev.code == BTN_LEFT) {
                     state->pointer_down = (ev.value != 0);
                     if (state->pointer_down) {
                         state->pointer_down_x = state->pointer_x;
                         state->pointer_down_y = state->pointer_y;
                     }
-                    LOG_DEBUG(state, "Input BTN_LEFT: %d at (%.1f, %.1f)", ev.value,
+                    LOG_DEBUG(state, "Input event: BTN_LEFT detected (state: %d, position: %.1f, %.1f)", ev.value,
                               state->pointer_x, state->pointer_y);
                 }
             }
@@ -279,23 +419,12 @@ void poll_input_events(struct glwall_state *state) {
     }
 }
 
-/**
- * @brief Cleans up input device resources
- *
- * Closes all monitored input device file descriptors, frees libevdev
- * structures, and deallocates the input state. After this function,
- * state->input_impl is set to NULL.
- *
- * @param state Pointer to global application state
- *
- * @note This function is a no-op if state->input_impl is NULL.
- */
 void cleanup_input(struct glwall_state *state) {
     if (!state->input_impl) {
         return;
     }
 
-    LOG_DEBUG(state, "Cleaning up kernel input devices...");
+    LOG_DEBUG(state, "Input subsystem cleanup initiated");
 
     struct input_state *input = (struct input_state *)state->input_impl;
 

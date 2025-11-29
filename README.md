@@ -27,8 +27,6 @@ GLWall is a high-performance wallpaper renderer for Wayland compositors that ren
 ### Development Standards
 *   **[Testing Strategy](.documentation/testing.md)**
     Manual verification steps and future testing plans.
-*   **[Roadmap](.documentation/roadmap.md)**
-    Future plans and technical debt.
 
 ## Community & Governance
 *   **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development workflow, standards, and contribution guidelines.

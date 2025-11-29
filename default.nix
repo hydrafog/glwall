@@ -1,6 +1,20 @@
 # default.nix
-# Compatibility shim for non-flake Nix users
-# This file provides backward compatibility by importing the actual
-# configuration from the nix/ subdirectory.
+# GLWall Configuration
+#
+# This file enables and configures the GLWall shader wallpaper service.
+# It imports the main module definition from ./module.nix and sets the
+# shader path to the retrowave GLSL shader.
 
-import ./nix/default.nix
+{ ... }:
+
+{
+  imports = [ ./module.nix ];
+
+  # GLWall Service Configuration
+  
+  glwall = {
+    enable = true;
+    shaderPath = builtins.toString ../shaders/retrowave.glsl;
+    texturePath = null;
+  };
+}

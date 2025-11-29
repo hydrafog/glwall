@@ -18,9 +18,15 @@ Usage: `glwall -s <shader.frag> [options]`
 | `-d, --debug` | Flag | No | `false` | Enable debug logging to stdout. |
 | `-p, --power-mode` | Enum | No | `full` | `full`, `throttled`, or `paused`. |
 | `-m, --mouse-overlay` | Enum | No | `none` | `none`, `edge`, or `full`. |
+| `--mouse-overlay-height` | Int | No | `32` | Height of the edge overlay in pixels. |
 | `--audio` | Flag | No | `false` | Enable audio reactivity. |
 | `--audio-source` | Enum | No | `pulse` | `pulse`, `pulseaudio`, `fake`, `debug`, or `none`. Use `fake`/`debug` for synthetic audio (testing). |
+| `--audio-device` | String | No | - | Specific PulseAudio source device name. |
 | `--vertex-count` | Int | No | `262144` | Number of vertices to draw. |
+| `--vertex-shader` | Path | No | - | Path to a vertex shader file. |
+| `--allow-vertex-shaders` | Flag | No | `false` | Enable vertex shader support. |
+| `--vertex-mode` | Enum | No | `points` | `points` or `lines`. |
+| `--kernel-input` | Flag | No | `false` | Enable direct kernel input monitoring for global mouse tracking. |
 
 ## 2. NixOS Module Options
 

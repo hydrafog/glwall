@@ -23,7 +23,8 @@ To verify changes, run the application in debug mode with a known shader:
 3.  **Resize**: Does it handle monitor resolution changes?
 4.  **Audio**: Does the shader react to system audio (if enabled)?
 5.  **Input**: Does mouse interaction work (if enabled)?
-6.  **Exit**: Does it shut down cleanly on Ctrl+C?
+6.  **Kernel Input**: Does mouse interaction work even when windows cover the wallpaper (with `--kernel-input`)?
+7.  **Exit**: Does it shut down cleanly on Ctrl+C?
 
 ### 1.2. Testing Audio-Reactive Shaders
 
