@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <limits.h>
+#include <unistd.h>
 
 /* Request flag set by the async signal handler; checked on the main thread. */
 static volatile sig_atomic_t glwall_dump_gpu_flag = 0;
@@ -501,6 +503,21 @@ void render_frame(struct glwall_output *output) {
         struct wl_callback *cb = wl_surface_frame(output->wl_surface);
         wl_callback_add_listener(cb, &frame_listener, output);
         wl_surface_commit(output->wl_surface);
+        /* If an external signal requested a GPU timing dump, perform it now from the main
+         * thread and write results to a file for later inspection. */
+        if (glwall_dump_gpu_flag) {
+            char path[PATH_MAX];
+            const char *xdg_runtime = getenv("XDG_RUNTIME_DIR");
+            pid_t pid = getpid();
+            if (xdg_runtime && xdg_runtime[0] != '\0') {
+                snprintf(path, sizeof(path), "%s/glwall_gpu_timing.%d.log", xdg_runtime, (int)pid);
+            } else {
+                snprintf(path, sizeof(path), "/tmp/glwall_gpu_timing.%d.log", (int)pid);
+            }
+            pipeline_dump_gpu_timing(state, path);
+            LOG_INFO("GPU timing dump written to %s", path);
+            glwall_dump_gpu_flag = 0;
+        }
         return;
     }
 

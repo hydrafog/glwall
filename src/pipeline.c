@@ -1266,3 +1266,26 @@ void pipeline_render_frame(struct glwall_output *output, float time_sec, float d
     glUseProgram(0);
     state->current_program = 0;
 }
+
+void pipeline_dump_gpu_timing(struct glwall_state *state, const char *path) {
+    if (!state || !state->pipeline || !path)
+        return;
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        LOG_ERROR("Unable to open GPU timing dump file: %s", path);
+        return;
+    }
+
+    struct glwall_pipeline *pl = state->pipeline;
+    fprintf(f, "Pipeline GPU timing dump\n");
+    fprintf(f, "Pass, samples, total_ms, avg_ms\n");
+    for (int i = 0; i < pl->pass_count; ++i) {
+        struct glwall_pass *p = &pl->passes[i];
+        double total = p->gpu_time_accum;
+        int samples = p->gpu_time_samples;
+        double avg = samples > 0 ? total / (double)samples : 0.0;
+        fprintf(f, "%d, %d, %.6f, %.6f\n", i, samples, total, avg);
+    }
+    fclose(f);
+}
