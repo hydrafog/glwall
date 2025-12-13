@@ -1219,3 +1219,7 @@ void pipeline_render_frame(struct glwall_output *output, float time_sec, float d
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
+
+    glUseProgram(0);
+    state->current_program = 0;
+}
