@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -24,11 +25,20 @@
 #define GLWALL_AUDIO_TEX_ROW_WAVEFORM 0
 #define GLWALL_AUDIO_TEX_ROW_SPECTRUM 1
 #define GLWALL_AUDIO_NORMALIZATION 32768.0f
+#define GLWALL_FFT_SIZE 512
 
 struct glwall_audio_impl {
     pa_simple *pa;
     bool is_fake;
     float phase;
+
+    pthread_t thread;
+    pthread_mutex_t lock;
+    int16_t *ring;
+    size_t ring_len;
+    size_t write_idx;
+    size_t frames_available;
+    bool thread_running;
 };
 
 struct pa_monitor_data {
@@ -108,22 +118,59 @@ static char *get_default_monitor_source(void) {
     return data.monitor_source;
 }
 
+static void *audio_capture_thread(void *arg) {
+    struct glwall_audio_impl *ai = arg;
+    while (ai->thread_running) {
+        int error = 0;
+        int16_t samples[GLWALL_FFT_SIZE];
+        if (pa_simple_read(ai->pa, samples, sizeof(samples), &error) < 0) {
+            LOG_ERROR("PulseAudio operation failed: read error (error: %s)", pa_strerror(error));
+            ai->thread_running = false;
+            break;
+        }
+        pthread_mutex_lock(&ai->lock);
+        for (int i = 0; i < GLWALL_FFT_SIZE; ++i) {
+            ai->ring[ai->write_idx] = samples[i];
+            ai->write_idx = (ai->write_idx + 1) % ai->ring_len;
+        }
+        if (ai->frames_available + GLWALL_FFT_SIZE <= ai->ring_len)
+            ai->frames_available += GLWALL_FFT_SIZE;
+        else
+            ai->frames_available = ai->ring_len;
+        pthread_mutex_unlock(&ai->lock);
+    }
+    return NULL;
+}
+
 static void glwall_audio_reset(struct glwall_state *state) {
     state->audio.enabled = false;
     state->audio.backend_ready = false;
     if (state->audio.texture != 0) {
+    #ifndef UNIT_TEST
         glDeleteTextures(1, &state->audio.texture);
         state->audio.texture = 0;
+    #else
+        state->audio.texture = 0;
+    #endif
     }
     state->audio.tex_width_px = 0;
     state->audio.tex_height_px = 0;
 
     if (state->audio.impl) {
         struct glwall_audio_impl *impl = state->audio.impl;
+        if (impl->thread_running) {
+            impl->thread_running = false;
+            if (impl->pa)
+                pa_simple_free(impl->pa);
+            pthread_join(impl->thread, NULL);
+        }
         if (impl->pa) {
             pa_simple_free(impl->pa);
             impl->pa = NULL;
         }
+        if (impl->ring)
+            free(impl->ring);
+        pthread_mutex_destroy(&impl->lock);
         free(impl);
         state->audio.impl = NULL;
     }
@@ -151,9 +198,16 @@ bool init_audio(struct glwall_state *state) {
         impl->is_fake = true;
         impl->phase = 0.0f;
         impl->pa = NULL;
+        impl->ring_len = GLWALL_FFT_SIZE * 8;
+        impl->ring = calloc((size_t)impl->ring_len, sizeof(int16_t));
+        impl->write_idx = 0;
+        impl->frames_available = 0;
+        impl->thread_running = false;
+        pthread_mutex_init(&impl->lock, NULL);
         state->audio.impl = impl;
 
         GLuint tex = 0;
+    #ifndef UNIT_TEST
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -168,9 +222,14 @@ bool init_audio(struct glwall_state *state) {
         state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width_px,
-                     state->audio.tex_height_px, 0, GL_RED, GL_FLOAT, NULL);
+                 state->audio.tex_height_px, 0, GL_RED, GL_FLOAT, NULL);
 
         state->audio.texture = tex;
+    #else
+        state->audio.tex_width_px = GLWALL_AUDIO_TEX_WIDTH;
+        state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
+        state->audio.texture = 0;
+    #endif
         state->audio.enabled = true;
         state->audio.backend_ready = true;
 
@@ -247,9 +306,20 @@ bool init_audio(struct glwall_state *state) {
         return false;
     }
     impl->pa = pa;
+    impl->ring_len = GLWALL_FFT_SIZE * 8;
+    impl->ring = calloc((size_t)impl->ring_len, sizeof(int16_t));
+    impl->write_idx = 0;
+    impl->frames_available = 0;
+    impl->thread_running = true;
+    pthread_mutex_init(&impl->lock, NULL);
+    if (pthread_create(&impl->thread, NULL, audio_capture_thread, impl) != 0) {
+        LOG_WARN("%s", "Audio subsystem warning: failed to create capture thread");
+        impl->thread_running = false;
+    }
     state->audio.impl = impl;
 
     GLuint tex = 0;
+#ifndef UNIT_TEST
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -267,6 +337,11 @@ bool init_audio(struct glwall_state *state) {
                  0, GL_RED, GL_FLOAT, NULL);
 
     state->audio.texture = tex;
+#else
+    state->audio.tex_width_px = GLWALL_AUDIO_TEX_WIDTH;
+    state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
+    state->audio.texture = 0;
+#endif
     state->audio.enabled = true;
     state->audio.backend_ready = true;
 
@@ -280,27 +355,39 @@ bool init_audio(struct glwall_state *state) {
 #include <complex.h>
 #include <math.h>
 
-#define GLWALL_FFT_SIZE 512
 #define PI 3.14159265358979323846
 
 static void fft(float complex *data, int n) {
+
     if (n <= 1)
         return;
 
-    float complex odd[n / 2];
-    float complex even[n / 2];
-    for (int i = 0; i < n / 2; i++) {
-        even[i] = data[2 * i];
-        odd[i] = data[2 * i + 1];
+    int j = 0;
+    for (int i = 1; i < n; ++i) {
+        int bit = n >> 1;
+        for (; j & bit; bit >>= 1)
+            j ^= bit;
+        j ^= bit;
+        if (i < j) {
+            float complex tmp = data[i];
+            data[i] = data[j];
+            data[j] = tmp;
+        }
     }
 
-    fft(even, n / 2);
-    fft(odd, n / 2);
-
-    for (int k = 0; k < n / 2; k++) {
-        float complex t = cexp(-2.0 * I * PI * k / n) * odd[k];
-        data[k] = even[k] + t;
-        data[k + n / 2] = even[k] - t;
+    for (int len = 2; len <= n; len <<= 1) {
+        double ang = -2.0 * PI / len;
+        float complex wlen = cos(ang) + I * sin(ang);
+        for (int i = 0; i < n; i += len) {
+            float complex w = 1.0 + 0.0 * I;
+            for (int k = 0; k < len / 2; ++k) {
+                float complex u = data[i + k];
+                float complex v = data[i + k + len / 2] * w;
+                data[i + k] = u + v;
+                data[i + k + len / 2] = u - v;
+                w *= wlen;
+            }
+        }
     }
 }
 
@@ -378,17 +465,31 @@ void update_audio_texture(struct glwall_state *state) {
     int16_t samples[GLWALL_FFT_SIZE];
 
     if (impl->is_fake) {
-
         generate_fake_audio(impl, samples, GLWALL_FFT_SIZE);
     } else {
-
-        int error = 0;
-        size_t bytes = sizeof(samples);
-        if (pa_simple_read(impl->pa, samples, bytes, &error) < 0) {
-            LOG_ERROR("PulseAudio operation failed: read error (error: %s)", pa_strerror(error));
-            state->audio.backend_ready = false;
+        if (!impl->pa) {
             return;
         }
+
+        pthread_mutex_lock(&impl->lock);
+        size_t avail = impl->frames_available;
+        if (avail >= GLWALL_FFT_SIZE) {
+            size_t start = (impl->write_idx + impl->ring_len - GLWALL_FFT_SIZE) % impl->ring_len;
+            for (int i = 0; i < GLWALL_FFT_SIZE; ++i) {
+                samples[i] = impl->ring[(start + i) % impl->ring_len];
+            }
+        } else if (avail > 0) {
+            size_t start = (impl->write_idx + impl->ring_len - avail) % impl->ring_len;
+            size_t pad = GLWALL_FFT_SIZE - avail;
+            for (size_t i = 0; i < pad; ++i)
+                samples[i] = 0;
+            for (size_t j = 0; j < avail; ++j)
+                samples[pad + j] = impl->ring[(start + j) % impl->ring_len];
+        } else {
+            for (int i = 0; i < GLWALL_FFT_SIZE; ++i)
+                samples[i] = 0;
+        }
+        pthread_mutex_unlock(&impl->lock);
     }
 
     static FILE *debug_file = NULL;
@@ -478,14 +579,55 @@ void update_audio_texture(struct glwall_state *state) {
     memcpy(audio_texture + (size_t)GLWALL_AUDIO_TEX_ROW_SPECTRUM * GLWALL_AUDIO_TEX_WIDTH,
            spectrum_row, sizeof(spectrum_row));
 
+#ifndef UNIT_TEST
     glBindTexture(GL_TEXTURE_2D, state->audio.texture);
+#endif
 
     if (width != GLWALL_AUDIO_TEX_WIDTH || height != GLWALL_AUDIO_TEX_HEIGHT) {
         LOG_WARN("Audio subsystem: unexpected texture size (%dx%d), expected %dx%d", width, height,
                  GLWALL_AUDIO_TEX_WIDTH, GLWALL_AUDIO_TEX_HEIGHT);
     }
 
+#ifndef UNIT_TEST
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RED, GL_FLOAT, audio_texture);
+#endif
 }
 
 void cleanup_audio(struct glwall_state *state) { glwall_audio_reset(state); }
+
+void audio_fft_process(float complex *data, int n) { fft(data, n); }
+
+int audio_read_recent_samples(struct glwall_state *state, int16_t *out, size_t count) {
+    if (!state || !state->audio.impl || !out)
+        return -1;
+    struct glwall_audio_impl *impl = state->audio.impl;
+    pthread_mutex_lock(&impl->lock);
+    size_t avail = impl->frames_available;
+    size_t take = count;
+    if (avail < take)
+        take = avail;
+    size_t start = 0;
+    if (take > 0)
+        start = (impl->write_idx + impl->ring_len - take) % impl->ring_len;
+    size_t pad = count - take;
+    for (size_t i = 0; i < pad; ++i)
+        out[i] = 0;
+    for (size_t i = 0; i < take; ++i)
+        out[pad + i] = impl->ring[(start + i) % impl->ring_len];
+    pthread_mutex_unlock(&impl->lock);
+    return (int)take;
+}
+
+void audio_test_overwrite_ring(struct glwall_state *state, const int16_t *samples, size_t count) {
+    if (!state || !state->audio.impl || !samples)
+        return;
+    struct glwall_audio_impl *impl = state->audio.impl;
+    pthread_mutex_lock(&impl->lock);
+    for (size_t i = 0; i < count; ++i) {
+        impl->ring[impl->write_idx] = samples[i];
+        impl->write_idx = (impl->write_idx + 1) % impl->ring_len;
+        if (impl->frames_available < impl->ring_len)
+            impl->frames_available++;
+    }
+    pthread_mutex_unlock(&impl->lock);
+}
