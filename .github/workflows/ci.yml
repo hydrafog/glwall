@@ -39,9 +39,11 @@ jobs:
           gcc -O2 -std=c11 -I./src -o tools/bench_read tools/bench_read.c src/utils.c -lm
           gcc -O2 -std=c11 -I./src -o tools/bench_fft tools/bench_fft.c -lm
           gcc -DUNIT_TEST -O2 -std=c11 -I./src -o tools/test_audio_ring tools/test_audio_ring.c src/audio.c -lpulse-simple -lpulse -pthread -lm
+          gcc -DUNIT_TEST -O2 -std=c11 -I./src -o tools/test_audio_ring_more tools/test_audio_ring_more.c src/audio.c -lpulse-simple -lpulse -pthread -lm
       - name: Run unit tests
         run: |
           ./tools/test_audio_ring
+          ./tools/test_audio_ring_more
       - name: Run benches
         run: |
           ./tools/bench_read README.md 1000 | tee bench_read.out
