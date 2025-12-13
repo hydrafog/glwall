@@ -383,23 +383,31 @@ static const char *quad_vertex_shader_src = "#version 330 core\n"
                                             "  vTexCoord = uv[gl_VertexID];\n"
                                             "}\n";
 
-static const char *ra_fragment_header = "#version 330 core\n"
-                                        "in vec2 vTexCoord;\n"
-                                        "out vec4 FragColor;\n"
-                                        "#define COMPAT_VARYING in\n"
-                                        "#define COMPAT_ATTRIBUTE in\n"
-                                        "#define COMPAT_TEXTURE texture\n"
-                                        "#define TEX0 vTexCoord\n"
-                                        "#define gl_FragColor FragColor\n"
-                                        "uniform sampler2D Source;\n"
-                                        "uniform sampler2D Original;\n"
-                                        "uniform vec4 SourceSize;\n"
-                                        "uniform vec4 OriginalSize;\n"
-                                        "uniform vec4 OutputSize;\n"
-                                        "uniform vec4 FinalViewportSize;\n"
-                                        "uniform int FrameCount;\n"
-                                        "uniform float FrameTime;\n"
-                                        "uniform float FrameDirection;\n";
+static const char *ra_fragment_header =
+    "#version 330 core\n"
+    "in vec2 vTexCoord;\n"
+    "out vec4 FragColor;\n"
+    "#define COMPAT_VARYING in\n"
+    "#define COMPAT_ATTRIBUTE in\n"
+    "#define COMPAT_TEXTURE texture\n"
+    "#define TEX0 vTexCoord\n"
+    "#define gl_FragColor FragColor\n"
+    "uniform sampler2D Source;\n"
+    "uniform sampler2D Original;\n"
+    "/* Per-pass state block: mapped into existing uniform names via macros */\n"
+    "layout(std140, binding = 1) uniform glwall_pass_block {\n"
+    "  vec4 pass_SourceSize;\n"
+    "  vec4 pass_OriginalSize;\n"
+    "  vec4 pass_OutputSize;\n"
+    "  vec4 pass_FinalViewportSize;\n"
+    "};\n"
+    "#define SourceSize pass_SourceSize\n"
+    "#define OriginalSize pass_OriginalSize\n"
+    "#define OutputSize pass_OutputSize\n"
+    "#define FinalViewportSize pass_FinalViewportSize\n"
+    "uniform int FrameCount;\n"
+    "uniform float FrameTime;\n"
+    "uniform float FrameDirection;\n";
 
 static GLuint compile_shader(struct glwall_state *state, GLenum type, const char *source) {
     GLuint shader = glCreateShader(type);
@@ -1166,10 +1174,45 @@ void pipeline_render_frame(struct glwall_output *output, float time_sec, float d
         if (p->loc_FrameDirection != -1)
             glUniform1f(p->loc_FrameDirection, 1.0f);
 
-        set_size_vec4(p->loc_OutputSize, out_w, out_h);
-        set_size_vec4(p->loc_SourceSize, src_w, src_h);
-        set_size_vec4(p->loc_OriginalSize, original_w, original_h);
-        set_size_vec4(p->loc_FinalViewportSize, output->width_px, output->height_px);
+        if (state->pass_ubo) {
+            float pass_ubo_data[16];
+            float fw = (float)src_w;
+            float fh = (float)src_h;
+            pass_ubo_data[0] = fw;
+            pass_ubo_data[1] = fh;
+            pass_ubo_data[2] = fw > 0.0f ? 1.0f / fw : 0.0f;
+            pass_ubo_data[3] = fh > 0.0f ? 1.0f / fh : 0.0f;
+
+            float ow = (float)original_w;
+            float oh = (float)original_h;
+            pass_ubo_data[4] = ow;
+            pass_ubo_data[5] = oh;
+            pass_ubo_data[6] = ow > 0.0f ? 1.0f / ow : 0.0f;
+            pass_ubo_data[7] = oh > 0.0f ? 1.0f / oh : 0.0f;
+
+            float ow2 = (float)out_w;
+            float oh2 = (float)out_h;
+            pass_ubo_data[8] = ow2;
+            pass_ubo_data[9] = oh2;
+            pass_ubo_data[10] = ow2 > 0.0f ? 1.0f / ow2 : 0.0f;
+            pass_ubo_data[11] = oh2 > 0.0f ? 1.0f / oh2 : 0.0f;
+
+            float vfw = (float)output->width_px;
+            float vfh = (float)output->height_px;
+            pass_ubo_data[12] = vfw;
+            pass_ubo_data[13] = vfh;
+            pass_ubo_data[14] = vfw > 0.0f ? 1.0f / vfw : 0.0f;
+            pass_ubo_data[15] = vfh > 0.0f ? 1.0f / vfh : 0.0f;
+
+            glBindBuffer(GL_UNIFORM_BUFFER, state->pass_ubo);
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(pass_ubo_data), pass_ubo_data);
+            glBindBuffer(GL_UNIFORM_BUFFER, 0);
+        } else {
+            set_size_vec4(p->loc_OutputSize, out_w, out_h);
+            set_size_vec4(p->loc_SourceSize, src_w, src_h);
+            set_size_vec4(p->loc_OriginalSize, original_w, original_h);
+            set_size_vec4(p->loc_FinalViewportSize, output->width_px, output->height_px);
+        }
 
         for (int pi = 0; pi < p->param_count; pi++) {
             if (p->param_locs[pi] != -1) {

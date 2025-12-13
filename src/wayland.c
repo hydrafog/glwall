@@ -376,8 +376,7 @@ void create_layer_surfaces(struct glwall_state *state) {
 
         output->wl_surface = wl_compositor_create_surface(state->compositor);
         output->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-            state->layer_shell, output->wl_surface, output->wl_output,
-            ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, "glwall");
+            state->layer_shell, output->wl_surface, output->wl_output, state->layer, "glwall");
 
         zwlr_layer_surface_v1_add_listener(output->layer_surface, &layer_surface_listener, output);
 

@@ -1,5 +1,5 @@
 CC = gcc
-PKGS = wayland-client wayland-egl egl gl glew libpulse-simple libpulse libevdev
+PKGS = wayland-client wayland-egl egl gl glew libpulse-simple libpulse libevdev libpng
 CFLAGS = -std=c11 -Wall -Wextra -Werror -Wpedantic -g $(shell pkg-config --cflags $(PKGS)) $(EXTRA_CFLAGS)
 LDFLAGS = $(shell pkg-config --libs $(PKGS)) -lm
 
@@ -23,7 +23,7 @@ XDG_SHELL_CODE = $(XDG_SHELL_PROTOCOL)-protocol.c
 GENERATED_HEADERS = $(LAYER_SHELL_CLIENT_HEADER) $(XDG_SHELL_CLIENT_HEADER)
 GENERATED_SOURCES = $(LAYER_SHELL_CODE) $(XDG_SHELL_CODE)
 
-SRCS = main.c utils.c wayland.c egl.c opengl.c audio.c input.c $(GENERATED_SOURCES)
+SRCS = main.c utils.c wayland.c egl.c opengl.c audio.c input.c image.c pipeline.c slang_process.c $(GENERATED_SOURCES)
 OBJS = $(SRCS:.c=.o)
 
 TARGET = glwall

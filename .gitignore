@@ -8,7 +8,8 @@ secrets.sh
 .vscode/
 
 # Project metadata
-.ai/
+.github/agents
+.logs
 
 # Python
 .venv/

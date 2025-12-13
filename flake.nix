@@ -10,7 +10,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        
+
         glwallPackage = pkgs.stdenv.mkDerivation {
           pname = "glwall";
           version = "1.0.0";
@@ -27,6 +27,7 @@
             gnumake
             glew
             libGL
+            libpng
             wayland
             wayland-protocols
             wlr-protocols
@@ -35,7 +36,6 @@
             libevdev
           ];
 
-          # Set protocol directories for Makefile
           WAYLAND_PROTOCOLS_DIR = "${pkgs.wayland-protocols}/share/wayland-protocols";
           WLR_PROTOCOLS_DIR = "${pkgs.wlr-protocols}/share/wlr-protocols";
 
@@ -44,11 +44,9 @@
             make clean
             make \
               EXTRA_CFLAGS="-I${pkgs.libevdev}/include/libevdev-1.0" \
-              LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
+                LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev -lpng"
           '';
 
-          # Minimal smoke test: ensure the built binary exists.
-          # (Extend this later to run a real test suite once available.)
           checkPhase = ''
             cd src
             test -x ./glwall
@@ -63,9 +61,9 @@
 
           meta = with pkgs.lib; {
             description = "A multi-monitor GLSL shader wallpaper renderer for Wayland";
-            homepage = "https://github.com/yourusername/glwall";
-            license = licenses.mit;
-            maintainers = [ maintainers.hyperfog ];
+            homepage = "https://github.com/hydrafog/glwall";
+            license = licenses.unlicense;
+            maintainers = [ ];
             platforms = platforms.linux;
           };
         };
@@ -83,44 +81,27 @@
 
         devShells.default = pkgs.mkShell {
           inputsFrom = [ glwallPackage ];
-          
-          # Add Python packages for the builder agent
-          buildInputs = with pkgs; [
-            (python3.withPackages (ps: with ps; [
-              langchain
-              langchain-openai
-              langchain-google-genai
-              langgraph
-              pydantic
-              chromadb
-              requests
-            ]))
+
+          packages = with pkgs; [
+            nodejs
+            clang-tools
           ];
-          
+
           shellHook = ''
             export WAYLAND_PROTOCOLS_DIR="${pkgs.wayland-protocols}/share/wayland-protocols"
             export WLR_PROTOCOLS_DIR="${pkgs.wlr-protocols}/share/wlr-protocols"
-            
-            echo "GLWall development environment"
-            echo "=============================="
-            echo ""
-            echo "Build commands:"
-            echo "  cd src && make        # Build the project"
-            echo "  cd src && make clean  # Clean build artifacts"
-            echo ""
-            echo "Run:"
-            echo "  cd src && ./glwall -s ../shaders/retrowave.glsl --debug"
-            echo ""
-            echo "Builder Agent:"
-            echo "  cd .ai/builder && python -m builder_agent.agent \"your request\""
-            echo "  All Python dependencies are managed by Nix"
-            echo ""
             export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+
+            if [ -z "$GLWALL_SHELL_INIT_DONE" ]; then
+              export GLWALL_SHELL_INIT_DONE=1
+              if [ -x ./scripts/start-service.sh ]; then
+                ./scripts/start-service.sh >/dev/null 2>&1 || true
+              fi
+            fi
           '';
         };
       }
     ) // {
-      # NixOS module
       nixosModules.default = { config, pkgs, lib, ... }:
         let
           cfg = config.glwall;
@@ -129,13 +110,13 @@
         {
           options.glwall = {
             enable = lib.mkEnableOption "GLWall shader wallpaper renderer";
-            
+
             shaderPath = lib.mkOption {
               type = lib.types.str;
               description = "Path to the GLSL fragment shader file";
               default = "${glwallPkg}/share/glwall/shaders/retrowave.glsl";
             };
-            
+
             package = lib.mkOption {
               type = lib.types.package;
               default = glwallPkg;
@@ -178,7 +159,7 @@
 
             vertexCount = lib.mkOption {
               type = lib.types.int;
-              default = 262144; # 512x512 points
+              default = 262144;
               description = "Number of vertices to draw when using a custom vertex shader.";
             };
 
@@ -198,7 +179,7 @@
             ];
 
             environment.systemPackages = [ cfg.package ];
-            
+
             systemd.user.services.glwall = {
               description = "GLWall shader wallpaper";
               wantedBy = [ "graphical-session.target" ];

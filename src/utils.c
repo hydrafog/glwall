@@ -13,20 +13,46 @@
 char *read_file(const char *path) {
     assert(path != NULL);
 
-    FILE *file = fopen(path, "r");
+    FILE *file = fopen(path, "rb");
     if (!file) {
         LOG_ERROR("File operation failed: unable to open '%s' (errno: %s)", path, strerror(errno));
         return NULL;
     }
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
+
+    long length = -1;
+#if defined(_POSIX_VERSION)
+    struct stat st;
+    if (fileno(file) >= 0 && fstat(fileno(file), &st) == 0 && S_ISREG(st.st_mode)) {
+        if (st.st_size > READ_FILE_MAX_SIZE) {
+            LOG_ERROR("File operation error: '%s' exceeds maximum allowed size (%d bytes)", path,
+                      READ_FILE_MAX_SIZE);
+            fclose(file);
+            return NULL;
+        }
+        length = (long)st.st_size;
+    } else {
+        if (fseek(file, 0, SEEK_END) == 0) {
+            long t = ftell(file);
+            if (t >= 0)
+                length = t;
+            fseek(file, 0, SEEK_SET);
+        }
+    }
+#else
+    if (fseek(file, 0, SEEK_END) == 0) {
+        long t = ftell(file);
+        if (t >= 0)
+            length = t;
+        fseek(file, 0, SEEK_SET);
+    }
+#endif
+
     if (length < 0) {
         LOG_ERROR("File operation failed: unable to determine size for '%s' (errno: %s)", path,
                   strerror(errno));
         fclose(file);
         return NULL;
     }
-    fseek(file, 0, SEEK_SET);
 
     if (length > READ_FILE_MAX_SIZE) {
         LOG_ERROR("File operation error: '%s' exceeds maximum allowed size (%d bytes)", path,
@@ -35,30 +61,31 @@ char *read_file(const char *path) {
         return NULL;
     }
 
-    if (length < 0 || (size_t)length + 1 == 0) {
-        LOG_ERROR("File operation failed: invalid size for '%s' (errno: %s)", path,
-                  strerror(errno));
-        fclose(file);
-        return NULL;
-    }
-
-    char *buffer = malloc((size_t)length + 1);
+    size_t buf_size = (size_t)length + 1;
+    char *buffer = malloc(buf_size);
     if (!buffer) {
         LOG_ERROR("%s", "Memory allocation failed: insufficient memory for file contents");
         fclose(file);
         return NULL;
     }
 
-    size_t read_length = fread(buffer, 1, length, file);
-    if (read_length != (size_t)length) {
-        LOG_ERROR("File read operation failed: '%s' (bytes read: %zu, expected: %ld)", path,
-                  read_length, length);
-        free(buffer);
-        fclose(file);
-        return NULL;
+    size_t total_read = 0;
+    while (total_read < (size_t)length) {
+        size_t r = fread(buffer + total_read, 1, (size_t)length - total_read, file);
+        if (r == 0) {
+            if (feof(file))
+                break;
+            if (ferror(file)) {
+                LOG_ERROR("File read operation failed: '%s' (errno: %s)", path, strerror(errno));
+                free(buffer);
+                fclose(file);
+                return NULL;
+            }
+        }
+        total_read += r;
     }
 
-    buffer[length] = '\0';
+    buffer[total_read] = '\0';
     fclose(file);
     return buffer;
 }
@@ -71,6 +98,7 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
 
     LOG_DEBUG(state, "Configuration parsing: processing command-line arguments (%d total)", argc);
     struct option long_options[] = {{"shader", required_argument, 0, 's'},
+                                    {"image", required_argument, 0, 'i'},
                                     {"debug", no_argument, 0, 'd'},
                                     {"power-mode", required_argument, 0, 'p'},
                                     {"mouse-overlay", required_argument, 0, 'm'},
@@ -84,13 +112,18 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
                                     {"vertex-count", required_argument, 0, 4},
                                     {"vertex-mode", required_argument, 0, 7},
                                     {"kernel-input", no_argument, 0, 8},
+                                    {"layer", required_argument, 0, 9},
                                     {0, 0, 0, 0}};
     int c;
-    while ((c = getopt_long(argc, argv, "s:dp:m:v:V", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:i:dp:m:v:V", long_options, NULL)) != -1) {
         switch (c) {
         case 's':
             state->shader_path = optarg;
             LOG_DEBUG(state, "Configuration: shader path set to '%s'", optarg);
+            break;
+        case 'i':
+            state->image_path = optarg;
+            LOG_DEBUG(state, "Configuration: image path set to '%s'", optarg);
             break;
         case 'd':
             state->debug = true;
@@ -219,13 +252,32 @@ void parse_options(int argc, char *argv[], struct glwall_state *state) {
             state->kernel_input_enabled = true;
             LOG_DEBUG(state, "%s", "Configuration: kernel input device monitoring enabled");
             break;
+        case 9:
+            if (strcmp(optarg, "background") == 0) {
+                state->layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+            } else if (strcmp(optarg, "bottom") == 0) {
+                state->layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+            } else if (strcmp(optarg, "top") == 0) {
+                state->layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+            } else if (strcmp(optarg, "overlay") == 0) {
+                state->layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+            } else {
+                LOG_ERROR("Configuration error: invalid layer '%s' (valid: "
+                          "background|bottom|top|overlay)",
+                          optarg);
+                exit(EXIT_FAILURE);
+            }
+            LOG_DEBUG(state, "Configuration: layer set to '%s'", optarg);
+            break;
         default:
             fprintf(
                 stderr,
-                "Usage: %s -s <shader.frag> [--debug] \\\n [--power-mode full|throttled|paused] "
+                "Usage: %s -s <shader.frag|preset.slangp|preset.glslp> [--image path.png] "
+                "[--debug] \\\n+ [--power-mode full|throttled|paused] "
                 "\\\n [--mouse-overlay none|edge|full] \\\n [--audio|--no-audio] [--audio-source "
                 "pulse|none] \\\n [--audio-device device-name] \\\n [--vertex-shader path "
-                "--allow-vertex-shaders] \\\n [--vertex-mode points|lines] \\\n [--kernel-input]\n",
+                "--allow-vertex-shaders] \\\n [--vertex-mode points|lines] \\\n [--kernel-input] "
+                "\\\n [--layer background|bottom|top|overlay]\n",
                 argv[0]);
             exit(EXIT_FAILURE);
         }

@@ -1,0 +1,34 @@
+name: Benchmarks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make build-essential pkg-config
+      - name: Build bench_read
+        run: |
+          gcc -O2 -std=c11 -I./src -o tools/bench_read tools/bench_read.c src/utils.c -lm
+      - name: Run bench_read
+        run: |
+          ./tools/bench_read README.md 1000 | tee bench_read.out
+      - name: Build bench_fft
+        run: |
+          gcc -O2 -std=c11 -I./src -o tools/bench_fft tools/bench_fft.c -lm
+      - name: Run bench_fft
+        run: |
+          ./tools/bench_fft 1000 | tee bench_fft.out
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            bench_read.out
+            bench_fft.out

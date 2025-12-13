@@ -104,6 +104,7 @@ struct glwall_state {
     GLuint shader_program;
     GLuint vao;
     GLuint ubo_state;
+    GLuint pass_ubo;
     GLuint current_program;
 
     GLuint source_image_texture;

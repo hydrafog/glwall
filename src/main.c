@@ -30,12 +30,15 @@ int main(int argc, char *argv[]) {
     state.audio_enabled = false;
     state.audio_source = GLWALL_AUDIO_SOURCE_PULSEAUDIO;
     state.audio_device_name = NULL;
+    state.image_path = NULL;
     state.allow_vertex_shaders = false;
     state.vertex_shader_path = NULL;
     state.vertex_count = 262144;
     state.vertex_draw_mode = GL_POINTS;
     state.kernel_input_enabled = false;
     state.input_impl = NULL;
+    state.pipeline = NULL;
+    state.layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
 
     parse_options(argc, argv, &state);
     LOG_DEBUG(&state, "%s", "Configuration parsing completed");

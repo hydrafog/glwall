@@ -34,11 +34,9 @@ int main(void) {
         return 2;
     }
 
-    // We expect audio ring length to be GLWALL_FFT_SIZE * 8; using 512 * 8 = 4096 locally
     size_t ring_len = 512 * 8;
     printf("Assumed ring length: %zu\n", ring_len);
 
-    // Test wrap-around: write ring_len + 100 samples and ensure last 100 are read
     size_t write_count = ring_len + 100;
     int16_t *samples = malloc(sizeof(int16_t) * write_count);
     if (!samples) {
@@ -51,7 +49,6 @@ int main(void) {
 
     audio_test_overwrite_ring(&state, samples, write_count);
 
-    // Now read the last 100 samples
     const size_t N = 100;
     int16_t out[N];
     int got = audio_read_recent_samples(&state, out, N);
@@ -69,7 +66,6 @@ int main(void) {
         }
     }
     printf("Wrap-around test passed\n");
-    // Reset audio state to ensure a clean ring before partial-read test
     cleanup_audio(&state);
     memset(&state, 0, sizeof(state));
     state.audio_enabled = true;
@@ -79,7 +75,6 @@ int main(void) {
         return 2;
     }
 
-    // Test partial reads: write 50 samples and request 512
     size_t small = 50;
     int16_t small_samples[small];
     for (size_t i = 0; i < small; ++i)
@@ -94,7 +89,6 @@ int main(void) {
         cleanup_audio(&state);
         return 1;
     }
-    // The front of the buffer should be zeros
     for (size_t i = 0; i < (size_t)(512 - small); ++i) {
         if (out_big[i] != 0) {
             fprintf(stderr, "Expected 0 at pad index %zu got %d\n", i, out_big[i]);
@@ -111,7 +105,6 @@ int main(void) {
     }
     printf("Partial read test passed\n");
 
-    // Threaded writer test
     pthread_t thr;
     struct thread_args args;
     args.state = &state;
@@ -126,7 +119,6 @@ int main(void) {
         return 1;
     }
 
-    // Read a few times while thread writes
     for (int i = 0; i < 20; ++i) {
         int16_t temp[128];
         int r = audio_read_recent_samples(&state, temp, 128);

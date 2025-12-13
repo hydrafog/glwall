@@ -146,12 +146,12 @@ static void glwall_audio_reset(struct glwall_state *state) {
     state->audio.enabled = false;
     state->audio.backend_ready = false;
     if (state->audio.texture != 0) {
-    #ifndef UNIT_TEST
+#ifndef UNIT_TEST
         glDeleteTextures(1, &state->audio.texture);
         state->audio.texture = 0;
-    #else
+#else
         state->audio.texture = 0;
-    #endif
+#endif
     }
     state->audio.tex_width_px = 0;
     state->audio.tex_height_px = 0;
@@ -207,7 +207,7 @@ bool init_audio(struct glwall_state *state) {
         state->audio.impl = impl;
 
         GLuint tex = 0;
-    #ifndef UNIT_TEST
+#ifndef UNIT_TEST
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -222,19 +222,31 @@ bool init_audio(struct glwall_state *state) {
         state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, state->audio.tex_width_px,
-                 state->audio.tex_height_px, 0, GL_RED, GL_FLOAT, NULL);
+                     state->audio.tex_height_px, 0, GL_RED, GL_FLOAT, NULL);
 
         state->audio.texture = tex;
-    #else
+#else
         state->audio.tex_width_px = GLWALL_AUDIO_TEX_WIDTH;
         state->audio.tex_height_px = GLWALL_AUDIO_TEX_HEIGHT;
         state->audio.texture = 0;
-    #endif
+#endif
         state->audio.enabled = true;
         state->audio.backend_ready = true;
 
         LOG_INFO("Audio resource created: texture (%dx%d) initialized for fake audio backend",
                  state->audio.tex_width_px, state->audio.tex_height_px);
+#ifndef UNIT_TEST
+        if (state->shader_program && state->loc_sound_res != -1) {
+            if (state->current_program != state->shader_program) {
+                glUseProgram(state->shader_program);
+                state->current_program = state->shader_program;
+            }
+            glUniform2f(state->loc_sound_res, (float)state->audio.tex_width_px,
+                        (float)state->audio.tex_height_px);
+            glUseProgram(0);
+            state->current_program = 0;
+        }
+#endif
         return true;
     }
 
@@ -348,6 +360,18 @@ bool init_audio(struct glwall_state *state) {
     LOG_INFO("Audio resource created: texture (%dx%d) for PulseAudio backend",
              state->audio.tex_width_px, state->audio.tex_height_px);
     LOG_DEBUG(state, "%s", "Audio subsystem initialization completed successfully");
+#ifndef UNIT_TEST
+    if (state->shader_program && state->loc_sound_res != -1) {
+        if (state->current_program != state->shader_program) {
+            glUseProgram(state->shader_program);
+            state->current_program = state->shader_program;
+        }
+        glUniform2f(state->loc_sound_res, (float)state->audio.tex_width_px,
+                    (float)state->audio.tex_height_px);
+        glUseProgram(0);
+        state->current_program = 0;
+    }
+#endif
     return true;
 #endif
 }

@@ -1,5 +1,3 @@
-
-
 uniform vec3 iResolution;
 uniform vec4 iMouse;
 uniform float iTime;

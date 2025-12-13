@@ -1,153 +1,143 @@
-# module.nix
-# GLWall NixOS Module
-#
-# This module provides a NixOS service for GLWall, a multi-monitor GLSL
-# shader-based dynamic wallpaper renderer. It builds from local source with
-# Wayland compositor integration and OpenGL rendering support.
-#
-# The module defines options under `glwall.*` for enabling the service and
-# configuring shader paths. When enabled, it installs the glwall package
-# to the system environment.
-
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
+{ config, pkgs, lib, ... }:
 
 let
-  # Package Derivation
-  
-  # GLWall package derivation for multi-monitor shader wallpapers.
-  # Builds with Wayland layer-shell protocol and OpenGL 3.3 core profile.
+  cfg = config.glwall;
+
   glwallPackage = pkgs.stdenv.mkDerivation {
     pname = "glwall";
     version = "1.0.0";
+    src = ./.;
 
-    src = ../.;
-
-    # Build Dependencies
-    
-    # OpenGL and Wayland development libraries required for compilation.
     nativeBuildInputs = with pkgs; [
       pkg-config
       wayland-scanner
     ];
-    
+
     buildInputs = with pkgs; [
-      # Build toolchain
       gcc
       gnumake
-
-      # OpenGL and graphics libraries
       glew
       libGL
-
-      # Wayland compositor integration
+      libpng
       wayland
       wayland-protocols
       wlr-protocols
       egl-wayland
-      
-      # Audio support
       pulseaudio
-      
-      # Input device support
       libevdev
     ];
 
-    # Build Environment
-    
-    # Protocol directory environment variables for Wayland build.
-    # These paths are required by the Makefile to locate protocol XML files.
     WAYLAND_PROTOCOLS_DIR = "${pkgs.wayland-protocols}/share/wayland-protocols";
     WLR_PROTOCOLS_DIR = "${pkgs.wlr-protocols}/share/wlr-protocols";
 
-    # Build Phase
-    
-    # Build GLWall binary with required libraries.
-    # Explicitly specify LDFLAGS to ensure all dependencies are linked.
     buildPhase = ''
       cd src
       make clean
       make \
         EXTRA_CFLAGS="-I${pkgs.libevdev}/include/libevdev-1.0" \
-        LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev"
+        LDFLAGS="-lGL -lGLEW -lEGL -lwayland-client -lwayland-egl -lm -lpulse-simple -lpulse -levdev -lpng"
     '';
 
-    # Install Phase
-    
-    # Install binary and shader resources to output directory.
     installPhase = ''
       mkdir -p $out/bin
       cp ./glwall $out/bin/
-      mkdir -p $out/share/glwall
-      cp -r ../shaders $out/share/glwall/
+      mkdir -p $out/share/glwall/shaders
+      cp -r ../shaders/* $out/share/glwall/shaders/
     '';
 
-    # Package Metadata
-    
-    meta = with lib; {
-      description = "A multi-monitor GLSL shader wallpaper renderer";
-      license = licenses.mit;
-      maintainers = [ maintainers.hyperfog ];
+    meta = with pkgs.lib; {
+      description = "A multi-monitor GLSL shader wallpaper renderer for Wayland";
+      homepage = "https://github.com/hydrafog/glwall";
+      license = licenses.unlicense;
+      maintainers = [ ];
       platforms = platforms.linux;
     };
   };
 in
 {
-  # Module Options
-  
-  # Configuration options for GLWall shader wallpaper service.
-  options = {
-    glwall.enable = lib.mkOption {
-      type = lib.types.bool;
-      description = "Enable GLWall shader wallpaper renderer.";
-      default = false;
-    };
+  options.glwall = {
+    enable = lib.mkEnableOption "GLWall shader wallpaper renderer";
 
-    glwall.shaderPath = lib.mkOption {
+    shaderPath = lib.mkOption {
       type = lib.types.str;
-      description = "Path to the GLSL fragment shader file.";
-      default = "/path/to/shader.glsl";
+      description = "Path to the GLSL fragment shader file";
+      default = "${glwallPackage}/share/glwall/shaders/retrowave.glsl";
     };
 
-    glwall.texturePath = lib.mkOption {
+    imagePath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
-      description = "Optional texture image path for shader input.";
+      description = "Optional image path for --image";
       default = null;
     };
 
-    glwall.debug = lib.mkOption {
+    debug = lib.mkOption {
       type = lib.types.bool;
-      description = "Enable debug logging.";
       default = false;
+      description = "Enable debug logging";
     };
 
-    glwall.package = lib.mkOption {
+    package = lib.mkOption {
       type = lib.types.package;
-      readOnly = true;
       default = glwallPackage;
-      description = "GLWall package for system installation.";
+      description = "GLWall package to use";
+    };
+
+    powerMode = lib.mkOption {
+      type = lib.types.enum [ "full" "throttled" "paused" ];
+      default = "full";
+      description = "Rendering power policy";
+    };
+
+    mouseOverlay = lib.mkOption {
+      type = lib.types.enum [ "none" "edge" "full" ];
+      default = "none";
+      description = "Mouse overlay mode";
+    };
+
+    mouseOverlayHeight = lib.mkOption {
+      type = lib.types.int;
+      default = 32;
+      description = "Height of edge strip when mouseOverlay = 'edge'";
+    };
+
+    audio = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Enable audio-reactive shaders";
+      };
+
+      source = lib.mkOption {
+        type = lib.types.enum [ "pulseaudio" "fake" "none" ];
+        default = "pulseaudio";
+        description = "Audio backend to use";
+      };
     };
   };
 
-  # Module Configuration
-  
-  # Install GLWall package to system environment when enabled.
-  config = lib.mkIf config.glwall.enable {
-    environment.systemPackages = [ config.glwall.package ];
+  config = lib.mkIf cfg.enable {
+    environment.systemPackages = [ cfg.package ];
 
     systemd.user.services.glwall = {
-      description = "GLWall - Shader Wallpaper Daemon";
+      description = "GLWall shader wallpaper";
       wantedBy = [ "graphical-session.target" ];
-      partOf = [ "graphical-session.target" ];
-      serviceConfig = {
-        ExecStart = "${config.glwall.package}/bin/glwall -s ${config.glwall.shaderPath} ${lib.optionalString config.glwall.debug "--debug"} ${lib.optionalString (config.glwall.texturePath != null) "-i ${config.glwall.texturePath}"}";
-        Restart = "always";
-        RestartSec = "5s";
-      };
+      after = [ "graphical-session.target" ];
+
+      serviceConfig =
+        let
+          powerArg = "--power-mode ${cfg.powerMode}";
+          mouseArgs = "--mouse-overlay ${cfg.mouseOverlay} --mouse-overlay-height ${toString cfg.mouseOverlayHeight}";
+          audioArgs = if cfg.audio.enable then
+            "--audio --audio-source ${cfg.audio.source}"
+          else
+            "--no-audio --audio-source none";
+          debugArg = lib.optionalString cfg.debug "--debug";
+          imageArg = lib.optionalString (cfg.imagePath != null) "--image ${cfg.imagePath}";
+        in
+        {
+          ExecStart = "${cfg.package}/bin/glwall -s ${cfg.shaderPath} ${imageArg} ${debugArg} ${powerArg} ${mouseArgs} ${audioArgs}";
+          Restart = "on-failure";
+        };
     };
   };
 }

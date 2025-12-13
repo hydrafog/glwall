@@ -11,6 +11,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+
+/* Request flag set by the async signal handler; checked on the main thread. */
+static volatile sig_atomic_t glwall_dump_gpu_flag = 0;
+
+static void glwall_profile_signal_handler(int sig) {
+    (void)sig;
+    glwall_dump_gpu_flag = 1;
+}
 
 static const char *vertex_shader_src = "#version 330 core\n"
                                        "const vec2 verts[4] = vec2[](vec2(-1.0, -1.0), vec2(1.0, "
@@ -221,6 +230,13 @@ bool init_opengl(struct glwall_state *state) {
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, state->ubo_state);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
+    state->pass_ubo = 0;
+    glGenBuffers(1, &state->pass_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, state->pass_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(float) * 16, NULL, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 1, state->pass_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
     if (state->shader_path && is_preset_path(state->shader_path)) {
         if (state->allow_vertex_shaders || state->vertex_shader_path) {
             LOG_WARN("Vertex shader overrides are ignored for presets (%s)", state->shader_path);
@@ -347,6 +363,21 @@ bool init_opengl(struct glwall_state *state) {
 
     state->profiling_enabled = getenv("GLWALL_PROFILE") != NULL;
 
+    /* Install a simple signal handler to request a GPU timing dump. The actual
+     * dump is performed on the main thread (in render_frame) to avoid doing
+     * complex I/O inside an async signal handler. */
+    signal(SIGUSR1, glwall_profile_signal_handler);
+
+    if (state->loc_sound != -1) {
+        if (state->current_program != state->shader_program) {
+            glUseProgram(state->shader_program);
+            state->current_program = state->shader_program;
+        }
+        glUniform1i(state->loc_sound, 0);
+        glUseProgram(0);
+        state->current_program = 0;
+    }
+
     LOG_DEBUG(state, "%s", "OpenGL subsystem initialization completed successfully");
     return true;
 }
@@ -373,6 +404,10 @@ void cleanup_opengl(struct glwall_state *state) {
     if (state->ubo_state) {
         glDeleteBuffers(1, &state->ubo_state);
         state->ubo_state = 0;
+    }
+    if (state->pass_ubo) {
+        glDeleteBuffers(1, &state->pass_ubo);
+        state->pass_ubo = 0;
     }
 }
 
@@ -474,25 +509,29 @@ void render_frame(struct glwall_output *output) {
         state->current_program = state->shader_program;
     }
 
-    if (state->loc_time != -1) {
-        glUniform1f(state->loc_time, shader_time);
-    }
-    if (state->loc_time_delta != -1) {
-        glUniform1f(state->loc_time_delta, time_delta);
-    }
-    if (state->loc_frame != -1) {
-        glUniform1i(state->loc_frame, current_frame);
+    if (!state->ubo_state) {
+        if (state->loc_time != -1) {
+            glUniform1f(state->loc_time, shader_time);
+        }
+        if (state->loc_time_delta != -1) {
+            glUniform1f(state->loc_time_delta, time_delta);
+        }
+        if (state->loc_frame != -1) {
+            glUniform1i(state->loc_frame, current_frame);
+        }
     }
 
     if (output->loc_resolution_last_updated == 0 || output->last_resolution_w != output->width_px ||
         output->last_resolution_h != output->height_px) {
-        if (state->loc_resolution != -1) {
-            glUniform3f(state->loc_resolution, (float)output->width_px, (float)output->height_px,
-                        1.0f);
-        }
-        if (state->loc_resolution_vec2 != -1) {
-            glUniform2f(state->loc_resolution_vec2, (float)output->width_px,
-                        (float)output->height_px);
+        if (!state->ubo_state) {
+            if (state->loc_resolution != -1) {
+                glUniform3f(state->loc_resolution, (float)output->width_px,
+                            (float)output->height_px, 1.0f);
+            }
+            if (state->loc_resolution_vec2 != -1) {
+                glUniform2f(state->loc_resolution_vec2, (float)output->width_px,
+                            (float)output->height_px);
+            }
         }
         output->last_resolution_w = output->width_px;
         output->last_resolution_h = output->height_px;
@@ -510,11 +549,13 @@ void render_frame(struct glwall_output *output) {
                 mw = (float)(output->height_px - 1) - (float)state->pointer_down_y;
             }
         }
-        if (state->loc_mouse != -1) {
-            glUniform4f(state->loc_mouse, mx, my, mz, mw);
-        }
-        if (state->loc_mouse_vec2 != -1) {
-            glUniform2f(state->loc_mouse_vec2, mx, my);
+        if (!state->ubo_state) {
+            if (state->loc_mouse != -1) {
+                glUniform4f(state->loc_mouse, mx, my, mz, mw);
+            }
+            if (state->loc_mouse_vec2 != -1) {
+                glUniform2f(state->loc_mouse_vec2, mx, my);
+            }
         }
         if (state->ubo_state) {
             float ubo_data[12];
@@ -540,14 +581,9 @@ void render_frame(struct glwall_output *output) {
     }
 
     if (state->audio_enabled && state->audio.backend_ready) {
-        if (state->loc_sound != -1 && state->audio.texture != 0) {
+        if (state->audio.texture != 0) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, state->audio.texture);
-            glUniform1i(state->loc_sound, 0);
-        }
-        if (state->loc_sound_res != -1) {
-            glUniform2f(state->loc_sound_res, (float)state->audio.tex_width_px,
-                        (float)state->audio.tex_height_px);
         }
     }
 

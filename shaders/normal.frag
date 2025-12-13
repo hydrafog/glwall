@@ -1,5 +1,3 @@
-
-
 void main() {
     vec2 uv = gl_FragCoord.xy / iResolution.xy;
     uv = uv * 2.0 - 1.0;
