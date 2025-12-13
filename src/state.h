@@ -19,6 +19,9 @@ extern const struct wl_callback_listener frame_listener;
 
 struct glwall_state;
 
+struct glwall_preset;
+struct glwall_pipeline;
+
 enum glwall_power_mode {
     GLWALL_POWER_MODE_FULL,
     GLWALL_POWER_MODE_THROTTLED,
@@ -61,6 +64,9 @@ struct glwall_output {
     int32_t width_px;
     int32_t height_px;
     bool configured;
+    int32_t last_resolution_w;
+    int32_t last_resolution_h;
+    int loc_resolution_last_updated;
     struct wl_callback_listener frame_listener;
     struct glwall_output *next;
 };
@@ -68,6 +74,7 @@ struct glwall_output {
 struct glwall_state {
 
     const char *shader_path;
+    const char *image_path;
     bool debug;
 
     enum glwall_power_mode power_mode;
@@ -81,6 +88,7 @@ struct glwall_state {
     int32_t vertex_count;
     GLenum vertex_draw_mode;
     bool kernel_input_enabled;
+    uint32_t layer;
 
     struct wl_display *display;
     struct wl_registry *registry;
@@ -95,6 +103,12 @@ struct glwall_state {
 
     GLuint shader_program;
     GLuint vao;
+    GLuint ubo_state;
+    GLuint current_program;
+
+    GLuint source_image_texture;
+    int32_t source_image_width_px;
+    int32_t source_image_height_px;
     GLint loc_resolution;
     GLint loc_resolution_vec2;
     GLint loc_time;
@@ -105,6 +119,8 @@ struct glwall_state {
     GLint loc_sound;
     GLint loc_sound_res;
     GLint loc_vertex_count;
+
+    struct glwall_pipeline *pipeline;
 
     struct glwall_output *outputs;
 
@@ -124,4 +140,6 @@ struct glwall_state {
     float last_time_sec;
     float logical_time_sec;
     int frame_index;
+    bool profiling_enabled;
+    double profiling_last_frame_ms;
 };

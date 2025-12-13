@@ -3,8 +3,10 @@
 #include <time.h>
 
 #include "audio.h"
+#include "image.h"
 #include "input.h"
 #include "opengl.h"
+#include "pipeline.h"
 #include "utils.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -24,6 +26,11 @@ static const char *vertex_preamble = "#version 330 core\n"
                                      "out vec4 v_color;\n";
 
 static const char *fragment_preamble = "#version 330 core\n"
+                                       "layout(std140, binding = 0) uniform glwall_state_block {\n"
+                                       "  vec4 iResolution;\n"
+                                       "  vec4 iTime_frame; /* x=iTime, y=iTimeDelta, z=iFrame */\n"
+                                       "  vec4 iMouse;\n"
+                                       "};\n"
                                        "#define gl_FragColor fragColor\n"
                                        "out vec4 fragColor;\n"
                                        "in vec4 v_color;\n";
@@ -32,6 +39,15 @@ static GLuint compile_shader(struct glwall_state *state, GLenum type, const char
 static GLuint create_shader_program(struct glwall_state *state, const char *vert_src,
                                     const char *frag_src);
 static char *concat_preamble(const char *preamble, const char *source);
+
+static bool is_preset_path(const char *path) {
+    if (!path)
+        return false;
+    const char *dot = strrchr(path, '.');
+    if (!dot)
+        return false;
+    return strcmp(dot, ".slangp") == 0 || strcmp(dot, ".glslp") == 0;
+}
 
 static char *strip_version_directive(const char *source) {
 
@@ -195,6 +211,58 @@ bool init_opengl(struct glwall_state *state) {
     glGenVertexArrays(1, &state->vao);
     glBindVertexArray(state->vao);
 
+    glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+
+    state->ubo_state = 0;
+    glGenBuffers(1, &state->ubo_state);
+    glBindBuffer(GL_UNIFORM_BUFFER, state->ubo_state);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(float) * 12, NULL, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, state->ubo_state);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    if (state->shader_path && is_preset_path(state->shader_path)) {
+        if (state->allow_vertex_shaders || state->vertex_shader_path) {
+            LOG_WARN("Vertex shader overrides are ignored for presets (%s)", state->shader_path);
+        }
+
+        if (state->image_path) {
+
+            struct glwall_image img;
+            if (load_png_rgba8(state->image_path, &img)) {
+                glGenTextures(1, &state->source_image_texture);
+                glBindTexture(GL_TEXTURE_2D, state->source_image_texture);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img.width_px, img.height_px, 0, GL_RGBA,
+                             GL_UNSIGNED_BYTE, img.rgba);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                state->source_image_width_px = img.width_px;
+                state->source_image_height_px = img.height_px;
+                free_glwall_image(&img);
+            } else {
+                LOG_WARN("Failed to load --image '%s' (PNG only); continuing with dummy Source",
+                         state->image_path);
+            }
+        }
+
+        if (!pipeline_init_from_preset(state, state->shader_path)) {
+            LOG_ERROR("Failed to initialize preset pipeline from '%s'", state->shader_path);
+            return false;
+        }
+
+        if (!init_audio(state)) {
+            LOG_WARN("%s", "Audio subsystem initialization failed, audio disabled");
+            state->audio_enabled = false;
+        }
+
+        LOG_DEBUG(state, "%s", "OpenGL subsystem initialization completed successfully (preset)");
+        return true;
+    }
+
     char *frag_src = NULL;
     if (state->shader_path) {
         char *raw_frag_src = read_file(state->shader_path);
@@ -253,6 +321,8 @@ bool init_opengl(struct glwall_state *state) {
     if (!state->shader_program)
         return false;
 
+    state->current_program = 0;
+
     state->loc_resolution = glGetUniformLocation(state->shader_program, "iResolution");
     state->loc_resolution_vec2 = glGetUniformLocation(state->shader_program, "resolution");
 
@@ -275,6 +345,8 @@ bool init_opengl(struct glwall_state *state) {
         state->audio_enabled = false;
     }
 
+    state->profiling_enabled = getenv("GLWALL_PROFILE") != NULL;
+
     LOG_DEBUG(state, "%s", "OpenGL subsystem initialization completed successfully");
     return true;
 }
@@ -284,11 +356,23 @@ void cleanup_opengl(struct glwall_state *state) {
 
     cleanup_audio(state);
 
+    pipeline_cleanup(state);
+
+    if (state->source_image_texture) {
+        glDeleteTextures(1, &state->source_image_texture);
+        state->source_image_texture = 0;
+    }
+
     if (state->shader_program) {
         glDeleteProgram(state->shader_program);
     }
+    state->current_program = 0;
     if (state->vao) {
         glDeleteVertexArrays(1, &state->vao);
+    }
+    if (state->ubo_state) {
+        glDeleteBuffers(1, &state->ubo_state);
+        state->ubo_state = 0;
     }
 }
 
@@ -361,7 +445,34 @@ void render_frame(struct glwall_output *output) {
         update_audio_texture(state);
     }
 
-    glUseProgram(state->shader_program);
+    if (pipeline_is_active(state)) {
+        if (do_update) {
+        }
+        if (state->profiling_enabled) {
+            struct timespec t0, t1;
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            pipeline_render_frame(output, shader_time, time_delta, current_frame);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            double ms = (t1.tv_sec - t0.tv_sec) * 1000.0 + (t1.tv_nsec - t0.tv_nsec) / 1e6;
+            state->profiling_last_frame_ms = ms;
+            LOG_INFO("Pipeline frame CPU time: %.3f ms", ms);
+        } else {
+            pipeline_render_frame(output, shader_time, time_delta, current_frame);
+        }
+
+        eglSwapBuffers(state->egl_display, output->egl_surface);
+        LOG_DEBUG(state, "Render cycle: buffer swap completed for output %u", output->output_name);
+
+        struct wl_callback *cb = wl_surface_frame(output->wl_surface);
+        wl_callback_add_listener(cb, &frame_listener, output);
+        wl_surface_commit(output->wl_surface);
+        return;
+    }
+
+    if (state->current_program != state->shader_program) {
+        glUseProgram(state->shader_program);
+        state->current_program = state->shader_program;
+    }
 
     if (state->loc_time != -1) {
         glUniform1f(state->loc_time, shader_time);
@@ -373,12 +484,19 @@ void render_frame(struct glwall_output *output) {
         glUniform1i(state->loc_frame, current_frame);
     }
 
-    if (state->loc_resolution != -1) {
-        glUniform3f(state->loc_resolution, (float)output->width_px, (float)output->height_px, 1.0f);
-    }
-
-    if (state->loc_resolution_vec2 != -1) {
-        glUniform2f(state->loc_resolution_vec2, (float)output->width_px, (float)output->height_px);
+    if (output->loc_resolution_last_updated == 0 || output->last_resolution_w != output->width_px ||
+        output->last_resolution_h != output->height_px) {
+        if (state->loc_resolution != -1) {
+            glUniform3f(state->loc_resolution, (float)output->width_px, (float)output->height_px,
+                        1.0f);
+        }
+        if (state->loc_resolution_vec2 != -1) {
+            glUniform2f(state->loc_resolution_vec2, (float)output->width_px,
+                        (float)output->height_px);
+        }
+        output->last_resolution_w = output->width_px;
+        output->last_resolution_h = output->height_px;
+        output->loc_resolution_last_updated = 1;
     }
 
     if (state->loc_mouse != -1 || state->loc_mouse_vec2 != -1) {
@@ -397,6 +515,27 @@ void render_frame(struct glwall_output *output) {
         }
         if (state->loc_mouse_vec2 != -1) {
             glUniform2f(state->loc_mouse_vec2, mx, my);
+        }
+        if (state->ubo_state) {
+            float ubo_data[12];
+            ubo_data[0] = (float)output->width_px;
+            ubo_data[1] = (float)output->height_px;
+            ubo_data[2] = 1.0f;
+            ubo_data[3] = 0.0f;
+
+            ubo_data[4] = shader_time;
+            ubo_data[5] = time_delta;
+            ubo_data[6] = (float)current_frame;
+            ubo_data[7] = 0.0f;
+
+            ubo_data[8] = mx;
+            ubo_data[9] = my;
+            ubo_data[10] = mz;
+            ubo_data[11] = mw;
+
+            glBindBuffer(GL_UNIFORM_BUFFER, state->ubo_state);
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ubo_data), ubo_data);
+            glBindBuffer(GL_UNIFORM_BUFFER, 0);
         }
     }
 
@@ -422,9 +561,7 @@ void render_frame(struct glwall_output *output) {
               "iResolution: %d x %d x 1.0)",
               shader_time, time_delta, current_frame, output->width_px, output->height_px);
 
-    glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_DEPTH_TEST);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -435,9 +572,11 @@ void render_frame(struct glwall_output *output) {
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
 
-    GLenum err;
-    if ((err = glGetError()) != GL_NO_ERROR) {
-        LOG_ERROR("OpenGL subsystem error: render error detected (error code: 0x%x)", err);
+    if (state->debug) {
+        GLenum err;
+        if ((err = glGetError()) != GL_NO_ERROR) {
+            LOG_ERROR("OpenGL subsystem error: render error detected (error code: 0x%x)", err);
+        }
     }
 
     eglSwapBuffers(state->egl_display, output->egl_surface);
