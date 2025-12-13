@@ -2,19 +2,63 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   nix-build:
+    name: Nix - flake check & build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: cachix/install-nix-action@v27
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
-    - name: Check Flake
-      run: nix flake check
-    - name: Build
-      run: nix build
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Check Flake
+        run: nix flake check
+      - name: Build
+        run: nix build
+
+  build-and-test:
+    name: Build (make) & Run tests/benchmarks
+    runs-on: ubuntu-latest
+    needs: [nix-build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make build-essential pkg-config libpulse-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libpng-dev libwayland-dev libevdev-dev
+      - name: Build project
+        run: |
+          make -C src -j
+      - name: Build tools and tests
+        run: |
+          mkdir -p tools
+          gcc -O2 -std=c11 -I./src -o tools/bench_read tools/bench_read.c src/utils.c -lm
+          gcc -O2 -std=c11 -I./src -o tools/bench_fft tools/bench_fft.c -lm
+          gcc -DUNIT_TEST -O2 -std=c11 -I./src -o tools/test_audio_ring tools/test_audio_ring.c src/audio.c -lpulse-simple -lpulse -pthread -lm
+      - name: Run unit tests
+        run: |
+          ./tools/test_audio_ring
+      - name: Run benches
+        run: |
+          ./tools/bench_read README.md 1000 | tee bench_read.out
+          ./tools/bench_fft 1000 | tee bench_fft.out
+      - name: Check benchmark thresholds
+        run: |
+          READ_OPS=$(grep -oE "\([0-9]+\.[0-9]+ ops/s\)|\([0-9]+ ops/s\)" bench_read.out | tail -1 | tr -d '() ops/s')
+          FFT_OPS=$(grep -oE "\([0-9]+\.[0-9]+ ops/s\)|\([0-9]+ ops/s\)" bench_fft.out | tail -1 | tr -d '() ops/s')
+          echo "read ops: $READ_OPS, fft ops: $FFT_OPS"
+          READ_THRESHOLD=15000
+          FFT_THRESHOLD=10000
+          awk -v v="$READ_OPS" -v t="$READ_THRESHOLD" 'BEGIN { if (v+0 < t+0) { print "bench_read below threshold"; exit 1 } }'
+          awk -v v="$FFT_OPS" -v t="$FFT_THRESHOLD" 'BEGIN { if (v+0 < t+0) { print "bench_fft below threshold"; exit 1 } }'
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: |
+            bench_read.out
+            bench_fft.out
